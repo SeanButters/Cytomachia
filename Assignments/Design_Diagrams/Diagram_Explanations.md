@@ -1,0 +1,4 @@
+## Design Diagram Explanations
+1. This is an overview of the user interaction with the application, the user inputs parameters, and the application will output a cellular automata simulation based on the parameters.
+2. This is an overview of the planned tech implementation for the application. The user will interact with the front end to create a list of neighborhoods and corresponding rule. User also has the option to modify the number of competing rulesets. These will be sent to the back-end where it will then compute the simulation and send rendered frames to the front-end.
+3. This is an overview of how the simulation calculates each state, starting from the initial state of a 2D grid of cells, that goes through 1 or multiple rulesets with corresponding neighborhoods to produce the next state that will be rendered.
