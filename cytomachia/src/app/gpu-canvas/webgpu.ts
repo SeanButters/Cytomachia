@@ -35,5 +35,5 @@ export class WebGPUService {
       format: this.format,
       alphaMode: 'opaque',
     });
-  }  
+  }
 }

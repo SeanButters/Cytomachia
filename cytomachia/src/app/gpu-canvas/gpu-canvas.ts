@@ -4,6 +4,7 @@ import {
   ViewChild,
   AfterViewInit,
   OnDestroy,
+  viewChild,
 } from '@angular/core';
 import { WebGPUService } from './webgpu';
 
@@ -15,8 +16,7 @@ import { WebGPUService } from './webgpu';
 })
 export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Canvas element
-  @ViewChild('canvas', {static: true})
-  canvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
   private canvas!: HTMLCanvasElement;
 
   // Canvas GPU configurations
@@ -38,10 +38,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     await this.gpu.init(this.canvas);
 
     this.resizeCanvas();
-
-    this.resizeObserver = new ResizeObserver(() => {
-      this.resizeCanvas();
-    });
     this.observeResize();
     this.clearCanvas();
   }
@@ -63,6 +59,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private resizeCanvas() {
+    console.log("yeet");
     const dpr = window.devicePixelRatio || 1;
 
     const width = Math.floor(this.canvas.clientWidth * dpr);
@@ -75,6 +72,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.height = height;
 
     // TODO this.renderFram();
+    //this.clearCanvas();
   }
 
   // TODO yoink this method
@@ -83,7 +81,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
       colorAttachments: [
         {
           view: this.gpu.context.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: { r: 100, g: 0, b: 20, a: 1 },
           loadOp: 'clear',
           storeOp: 'store',
         },
