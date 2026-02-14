@@ -19,11 +19,11 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
   private canvas!: HTMLCanvasElement;
 
-  // Canvas GPU configurations
+  // WebGPU service
   constructor(private gpu: WebGPUService) {}
 
+  // Resize observer to maintain canvas dimensions
   private resizeObserver?: ResizeObserver;
-
   private observeResize() {
     this.resizeObserver = new ResizeObserver(() => {
       this.scheduleResize();
@@ -32,7 +32,10 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.resizeObserver.observe(document.body);
   }
 
-  // Wait until canvas is in DOM
+  sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  // Wait until canvas is in DOM to initialize GPU
   async ngAfterViewInit() {
     this.canvas = this.canvasRef.nativeElement;
     await this.gpu.init(this.canvas);
@@ -40,13 +43,20 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.resizeCanvas();
     this.observeResize();
     this.clearCanvas();
+    for (let i = 0; i < 20; i++){
+      await this.sleep(2000)
+      this.gpu.stepCompute();
+      this.gpu.renderFrame();
+    }
   }
 
   // Remove any subscriptions on destroy
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
+    this.gpu.destroy();
   }
 
+  // Schedule resize to not trigger the resize observer
   private resizePending = false;
   private scheduleResize() {
     if(this.resizePending) return;
@@ -59,7 +69,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private resizeCanvas() {
-    console.log("yeet");
     const dpr = window.devicePixelRatio || 1;
 
     const width = Math.floor(this.canvas.clientWidth * dpr);
@@ -71,24 +80,12 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    // TODO this.renderFram();
-    //this.clearCanvas();
+    // TODO this.renderFrame();
+    this.clearCanvas(); // todo for now
   }
 
-  // TODO yoink this method
+  // TODO replace this
   public clearCanvas() {
-    const pass = this.gpu.encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: this.gpu.context.getCurrentTexture().createView(),
-          clearValue: { r: 100, g: 0, b: 20, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-
-    pass.end();
-    this.gpu.device.queue.submit([this.gpu.encoder.finish()]);
+    this.gpu.clearTexture();
   }
 }
