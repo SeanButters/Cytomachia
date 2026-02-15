@@ -11,19 +11,18 @@ export class WebGPUService {
   private format!: GPUTextureFormat;
 
   // Compute pipleine vars
-  private stateBufferA!: GPUBuffer;
-  private stateBufferB!: GPUBuffer;
+  private stateBuffers: GPUBuffer[] = [];
+  private pingpongIndex = 0;
+  private computeBindGroups: GPUBindGroup[] =[];
   private computePipeline!: GPUComputePipeline;
-  private bindGroup!: GPUBindGroup;
+  // Render pipeline vars
+  private renderBindGroups: GPUBindGroup[] = [];
+  private renderPipeline!: GPURenderPipeline;
 
   // Simulation constraints
-  private cellSizeBytes = 4; // Num bytes per cell in memory (2bytes for Int16)
+  private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
   private gridWidth = 444;
   private gridHeight = 256;
-
-  // Render pipeline vars
-  private renderPipeline!: GPURenderPipeline;
-  private renderBindGroup!: GPUBindGroup;
 
 
   // Initialization method, call after canvas element is in dom
@@ -61,6 +60,128 @@ export class WebGPUService {
     // Render init
     this.createRenderPipeline();
     this.createRenderBindGroup();
+  }
+
+  // Call when freeing this service
+  destroy() {
+    // TODO stop loops
+    // TODO release references
+
+    // Release memory
+    this.stateBuffers.forEach((buffer) => buffer?.destroy());
+    this.device?.destroy();
+
+    // Clear references
+    this.context = undefined as any;
+    this.device = undefined as any;
+    this.stateBuffers = undefined as any;
+    this.computePipeline = undefined as any;
+    this.renderPipeline = undefined as any;
+    this.computeBindGroups = undefined as any;
+    this.renderBindGroups = undefined as any;
+  }
+
+  // Initialize ping pong state buffers
+  private initStateBuffers () {
+    const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
+
+    for (let i = 0; i < 2; i++) {
+      this.stateBuffers.push(
+        this.device.createBuffer({
+          size: bufferSize,
+          usage:
+            GPUBufferUsage.STORAGE |
+            GPUBufferUsage.COPY_DST |
+            GPUBufferUsage.COPY_SRC,
+        })
+      );
+    }
+  }
+
+  private createComputePipeline() {
+    const shaderModule = this.device.createShaderModule({
+      code: `
+  struct Grid {
+    width: u32,
+    height: u32,
+  };
+
+  @group(0) @binding(0)
+  var<storage, read> currentState: array<u32>;
+
+  @group(0) @binding(1)
+  var<storage, read_write> nextState: array<u32>;
+
+  @compute @workgroup_size(8, 8)
+  fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let width = ${this.gridWidth}u;
+    let height = ${this.gridHeight}u;
+
+    if (id.x >= width || id.y >= height) {
+      return;
+    }
+
+    let index = id.y * width + id.x;
+
+    let value = currentState[index];
+
+    // Toggle 0 ↔ 1
+    nextState[index] = 1u - value;
+  }
+  `,
+    });
+
+    this.computePipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: shaderModule,
+        entryPoint: 'main',
+      },
+    });
+  }
+
+  private createBindGroup() {
+    const layout = this.computePipeline.getBindGroupLayout(0);
+
+    this.computeBindGroups = [
+      // A -> B
+      this.device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[0] } },
+          { binding: 1, resource: { buffer: this.stateBuffers[1] } },
+        ],
+      }),
+      // B -> A
+      this.device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[1] } },
+          { binding: 1, resource: { buffer: this.stateBuffers[0] } },
+        ],
+      }),
+    ];
+  }
+
+  stepCompute() {
+    console.log("hello!");
+    const encoder = this.device.createCommandEncoder();
+
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.computePipeline);
+    pass.setBindGroup(0, this.computeBindGroups[this.pingpongIndex]);
+
+    const workgroupSize = 8;
+    const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
+    const dispatchY = Math.ceil(this.gridHeight / workgroupSize);
+
+    pass.dispatchWorkgroups(dispatchX, dispatchY);
+    pass.end();
+
+    this.device.queue.submit([encoder.finish()]);
+
+    // Flip index
+    this.pingpongIndex ^= 1;
   }
 
   private createRenderPipeline() {
@@ -145,140 +266,27 @@ export class WebGPUService {
   }
 
   private createRenderBindGroup() {
-    this.renderBindGroup = this.device.createBindGroup({
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.stateBufferA },
-        },
-      ],
-    });
-  }
+    const layout = this.renderPipeline.getBindGroupLayout(0);
 
-
-  // Call when freeing this service
-  destroy() {
-    // TODO stop loops
-    // TODO release references
-    this.context = undefined as any;
-    this.device = undefined as any;
-  }
-
-  // Initialize ping pong state buffers
-  private initStateBuffers () {
-    const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
-
-    this.stateBufferA = this.device.createBuffer({
-      size: bufferSize,
-      usage:
-        GPUBufferUsage.STORAGE |
-        GPUBufferUsage.COPY_DST |
-        GPUBufferUsage.COPY_SRC,
-    });
-
-    this.stateBufferB = this.device.createBuffer({
-      size: bufferSize,
-      usage:
-        GPUBufferUsage.STORAGE |
-        GPUBufferUsage.COPY_DST |
-        GPUBufferUsage.COPY_SRC,
-    });
-  }
-
-  private createComputePipeline() {
-    const shaderModule = this.device.createShaderModule({
-      code: `
-  struct Grid {
-    width: u32,
-    height: u32,
-  };
-
-  @group(0) @binding(0)
-  var<storage, read> currentState: array<u32>;
-
-  @group(0) @binding(1)
-  var<storage, read_write> nextState: array<u32>;
-
-  @compute @workgroup_size(8, 8)
-  fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let width = ${this.gridWidth}u;
-    let height = ${this.gridHeight}u;
-
-    if (id.x >= width || id.y >= height) {
-      return;
-    }
-
-    let index = id.y * width + id.x;
-
-    let value = currentState[index];
-
-    // Toggle 0 ↔ 1
-    nextState[index] = 1u - value;
-  }
-  `,
-    });
-
-    this.computePipeline = this.device.createComputePipeline({
-      layout: 'auto',
-      compute: {
-        module: shaderModule,
-        entryPoint: 'main',
-      },
-    });
-  }
-
-  private createBindGroup() {
-    this.bindGroup = this.device.createBindGroup({
-      layout: this.computePipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.stateBufferA },
-        },
-        {
-          binding: 1,
-          resource: { buffer: this.stateBufferB },
-        },
-      ],
-    });
-  }
-
-  stepCompute() {
-    console.log("hello!");
-    const encoder = this.device.createCommandEncoder();
-
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(this.computePipeline);
-    pass.setBindGroup(0, this.bindGroup);
-
-    const workgroupSize = 8;
-    const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
-    const dispatchY = Math.ceil(this.gridHeight / workgroupSize);
-
-    pass.dispatchWorkgroups(dispatchX, dispatchY);
-    pass.end();
-
-    this.device.queue.submit([encoder.finish()]);
-
-    this.swapBuffers();
-  }
-
-  private swapBuffers() {
-    const temp = this.stateBufferA;
-    this.stateBufferA = this.stateBufferB;
-    this.stateBufferB = temp;
-
-    // Recreate bind group with swapped buffers
-    this.createBindGroup(); // Compute
-    this.createRenderBindGroup(); // Render
+    this.renderBindGroups = [
+      this.device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[0] } },
+        ],
+      }),
+      this.device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[1] } },
+        ],
+      }),
+    ];
   }
 
   renderFrame() {
     const encoder = this.device.createCommandEncoder();
-
-    const texture = this.context.getCurrentTexture();
-    const view = texture.createView();
+    const view = this.context.getCurrentTexture().createView();
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -292,13 +300,12 @@ export class WebGPUService {
     });
 
     pass.setPipeline(this.renderPipeline);
-    pass.setBindGroup(0, this.renderBindGroup);
+    pass.setBindGroup(0, this.renderBindGroups[this.pingpongIndex]);
     pass.draw(6); // fullscreen quad
     pass.end();
 
     this.device.queue.submit([encoder.finish()]);
   }
-
 
   // TODO yoink this
   async clearTexture(clearColor = { r: 0, g: 0, b: 0, a: 1 }) {
