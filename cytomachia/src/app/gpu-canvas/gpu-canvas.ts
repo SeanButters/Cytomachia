@@ -4,7 +4,7 @@ import {
   ViewChild,
   AfterViewInit,
   OnDestroy,
-  viewChild,
+  NgZone,
 } from '@angular/core';
 import { WebGPUService } from './webgpu';
 
@@ -15,16 +15,70 @@ import { WebGPUService } from './webgpu';
   styleUrl: './gpu-canvas.scss',
 })
 export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
+  // Injectable constructors
+  constructor(
+    private gpu: WebGPUService,
+    private zone: NgZone
+  ) {}
+
   // Canvas element
   @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
   private canvas!: HTMLCanvasElement;
 
-  // WebGPU service
-  constructor(private gpu: WebGPUService) {}
+  // Maintain canvas aspect ratio vars
+  private resizeObserver?: ResizeObserver;   // Resize observer to maintain canvas dimensions
+  private resizePending = false;  // Schedule resize in animation frame to not anger the resize observer
 
-  // Resize observer to maintain canvas dimensions
-  private resizeObserver?: ResizeObserver;
-  private observeResize() {
+  ///
+  /// Angular Lifecycle Hooks
+  ///
+  async ngAfterViewInit() {
+    // Wait until canvas is in DOM to initialize GPU
+    this.canvas = this.canvasRef.nativeElement;
+    await this.gpu.init(this.canvas);
+
+    // Setup canvas
+    this.resizeCanvas();
+    this.initResizeObserver();
+    window.addEventListener('keydown', this.handleKey);
+    this.gpu.renderFrame();
+
+    // Start render compute loop
+    this.startGpuLoop();
+  }
+
+  ngOnDestroy(): void {
+    // Remove any subscriptions on destroy
+    window.removeEventListener('keydown', this.handleKey);
+    this.resizeObserver?.disconnect();
+    this.gpu.destroy();
+  }
+
+  ///
+  /// Component Methods
+  ///
+  // Start GPU loop
+  private startGpuLoop() {
+    this.zone.runOutsideAngular(() => {
+      this.gpu.start();
+    });
+  }
+
+  private handleKey = (e: KeyboardEvent) => {
+    if (e.code === 'Space') {
+      this.gpu.pause(); // TODO if want to add indicator to FE, need to manually track pause state in front end
+    }
+    if (e.code === 'KeyN') {
+      this.gpu.stepOnce();
+    }
+  };
+
+  // TODO Helper method to sleep maybe not needed in future?
+  // sleep(ms: number) {
+  //   return new Promise(resolve => setTimeout(resolve, ms));
+  // }
+
+  private initResizeObserver() {
     this.resizeObserver = new ResizeObserver(() => {
       this.scheduleResize();
     });
@@ -32,32 +86,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.resizeObserver.observe(document.body);
   }
 
-  sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-  // Wait until canvas is in DOM to initialize GPU
-  async ngAfterViewInit() {
-    this.canvas = this.canvasRef.nativeElement;
-    await this.gpu.init(this.canvas);
-
-    this.resizeCanvas();
-    this.observeResize();
-    this.clearCanvas();
-    for (let i = 0; i < 20; i++){
-      await this.sleep(2000)
-      this.gpu.stepCompute();
-      this.gpu.renderFrame();
-    }
-  }
-
-  // Remove any subscriptions on destroy
-  ngOnDestroy(): void {
-    this.resizeObserver?.disconnect();
-    this.gpu.destroy();
-  }
-
-  // Schedule resize to not trigger the resize observer
-  private resizePending = false;
   private scheduleResize() {
     if(this.resizePending) return;
     this.resizePending = true;
@@ -68,6 +96,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  // Resize canvas to same aspect ratio when window is resized
   private resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
 
@@ -80,12 +109,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    // TODO this.renderFrame();
-    this.clearCanvas(); // todo for now
+    this.gpu.renderFrame();
   }
 
-  // TODO replace this
-  public clearCanvas() {
-    this.gpu.clearTexture();
-  }
+
 }

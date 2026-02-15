@@ -4,6 +4,10 @@ import { Injectable } from '@angular/core';
   providedIn: 'root',
 })
 export class WebGPUService {
+
+  ///
+  /// Vars
+  ///
   // WebGPU setup vars
   private device!: GPUDevice;
   private context!: GPUCanvasContext;
@@ -24,7 +28,16 @@ export class WebGPUService {
   private gridWidth = 444;
   private gridHeight = 256;
 
+  // Simulation loop state vars
+  private animationId: number | null = null;
+  private isRunning: boolean = false;
+  private targetStepsPerSecond = 30;
+  private lastFrameTime = 0;
+  private stepAccumulator = 0;
 
+  ///
+  /// Public API methods
+  ///
   // Initialization method, call after canvas element is in dom
   async init(canvas: HTMLCanvasElement) {
     // WebGPU setup
@@ -52,20 +65,19 @@ export class WebGPUService {
       alphaMode: 'opaque',
     });
 
-    // Simulation setup
-    // Compute init
+    // Compute pipline init
     this.initStateBuffers();
     this.createComputePipeline();
     this.createBindGroup();
-    // Render init
+    // Render pipeline init
     this.createRenderPipeline();
     this.createRenderBindGroup();
   }
 
   // Call when freeing this service
   destroy() {
-    // TODO stop loops
-    // TODO release references
+    // Stop loop
+    this.stop();
 
     // Release memory
     this.stateBuffers.forEach((buffer) => buffer?.destroy());
@@ -81,6 +93,104 @@ export class WebGPUService {
     this.renderBindGroups = undefined as any;
   }
 
+  start() {
+    if (this.isRunning) return;
+    this.lastFrameTime = performance.now();
+    this.isRunning = true;
+
+    requestAnimationFrame(this.frame);
+  }
+
+  stop() {
+    this.isRunning = false;
+
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+  }
+
+  pause() {
+    this.isRunning = !this.isRunning;
+  }
+
+  stepOnce(){
+    if (!this.isRunning) {
+      this.computeStep();
+      this.renderFrame();
+    }
+  }
+
+  renderFrame() {
+    const encoder = this.device.createCommandEncoder();
+    const view = this.context.getCurrentTexture().createView();
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view,
+          loadOp: 'clear',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          storeOp: 'store',
+        },
+      ],
+    });
+
+    pass.setPipeline(this.renderPipeline);
+    pass.setBindGroup(0, this.renderBindGroups[this.pingpongIndex]);
+    pass.draw(6); // fullscreen quad
+    pass.end();
+
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  ///
+  /// Private Service methods
+  ///
+  private frame = (time: number) => {
+    const delta = (time - this.lastFrameTime) / 1000;
+    this.lastFrameTime = time;
+
+    if (this.isRunning) {
+      const stepInterval = 1 / this.targetStepsPerSecond;
+      this.stepAccumulator += delta;
+
+      while (this.stepAccumulator >= stepInterval) {
+        this.computeStep();
+        this.stepAccumulator -= stepInterval;
+      }
+    }
+
+    this.renderFrame();
+
+    // Loop
+    requestAnimationFrame(this.frame);
+  };
+
+  private computeStep() {
+    const encoder = this.device.createCommandEncoder();
+
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.computePipeline);
+    pass.setBindGroup(0, this.computeBindGroups[this.pingpongIndex]);
+
+    const workgroupSize = 8;
+    const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
+    const dispatchY = Math.ceil(this.gridHeight / workgroupSize);
+
+    pass.dispatchWorkgroups(dispatchX, dispatchY);
+    pass.end();
+
+    this.device.queue.submit([encoder.finish()]);
+
+    // Flip index
+    this.pingpongIndex ^= 1;
+  }
+
+
+  ///
+  /// Private Initialization Methods
+  ///
   // Initialize ping pong state buffers
   private initStateBuffers () {
     const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
@@ -161,27 +271,6 @@ export class WebGPUService {
         ],
       }),
     ];
-  }
-
-  stepCompute() {
-    console.log("hello!");
-    const encoder = this.device.createCommandEncoder();
-
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(this.computePipeline);
-    pass.setBindGroup(0, this.computeBindGroups[this.pingpongIndex]);
-
-    const workgroupSize = 8;
-    const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
-    const dispatchY = Math.ceil(this.gridHeight / workgroupSize);
-
-    pass.dispatchWorkgroups(dispatchX, dispatchY);
-    pass.end();
-
-    this.device.queue.submit([encoder.finish()]);
-
-    // Flip index
-    this.pingpongIndex ^= 1;
   }
 
   private createRenderPipeline() {
@@ -282,53 +371,5 @@ export class WebGPUService {
         ],
       }),
     ];
-  }
-
-  renderFrame() {
-    const encoder = this.device.createCommandEncoder();
-    const view = this.context.getCurrentTexture().createView();
-
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view,
-          loadOp: 'clear',
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          storeOp: 'store',
-        },
-      ],
-    });
-
-    pass.setPipeline(this.renderPipeline);
-    pass.setBindGroup(0, this.renderBindGroups[this.pingpongIndex]);
-    pass.draw(6); // fullscreen quad
-    pass.end();
-
-    this.device.queue.submit([encoder.finish()]);
-  }
-
-  // TODO yoink this
-  async clearTexture(clearColor = { r: 0, g: 0, b: 0, a: 1 }) {
-    if (!this.device || !this.context) return;
-
-    const texture = this.context.getCurrentTexture();
-    const view = texture.createView();
-
-    const encoder = this.device.createCommandEncoder();
-
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view,
-          clearValue: clearColor,
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-
-    pass.end();
-
-    this.device.queue.submit([encoder.finish()]);
   }
 }
