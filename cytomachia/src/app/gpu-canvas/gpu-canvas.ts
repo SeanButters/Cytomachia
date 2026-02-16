@@ -83,10 +83,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   private pauseLoop() {
       this.gpu.pause();
-      // TODO remove console log
-      if(this.isPaused) console.log("Unpaused");
-      else console.log("Paused");
-
       this.isPaused = !this.isPaused;
   }
 
