@@ -20,14 +20,16 @@ export class WebGPUService {
   private format!: GPUTextureFormat;
 
   // Compute pipleine vars
-  private stateBuffers: GPUBuffer[] = [];
-  private pingpongIndex = 0;
-  private kernelBuffer!: GPUBuffer;
-  private computeBindGroups: GPUBindGroup[] =[];
   private computePipeline!: GPUComputePipeline;
+  private stateBuffers: GPUBuffer[] = [];
+  private computePingPongBindGroup: GPUBindGroup[] =[];
+  private pingpongIndex = 0;
+  private gridParamsBuffer!: GPUBuffer;
+  private computeParamsBindGroup!: GPUBindGroup;
   // Render pipeline vars
-  private renderBindGroups: GPUBindGroup[] = [];
   private renderPipeline!: GPURenderPipeline;
+  private renderPingPongBindGroup: GPUBindGroup[] = [];
+  private renderParamsBindGroup!: GPUBindGroup;
 
   // Simulation constraints
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
@@ -84,12 +86,12 @@ export class WebGPUService {
     });
 
     // Compute pipline init
-    this.initStateBuffers();
+    this.createPingPongStateBuffers();
     this.createCameraBuffer();
     await this.randomizeGrid();
-    this.createKernelBuffer();
+    this.createGridParamsBuffer();
     this.createComputePipeline();
-    this.createBindGroup();
+    this.createComputeBindGroups();
     // Render pipeline init
     this.createRenderPipeline();
     this.createRenderBindGroup();
@@ -102,7 +104,7 @@ export class WebGPUService {
 
     // Release allocated memory
     this.stateBuffers.forEach((buffer) => buffer?.destroy());
-    this.kernelBuffer?.destroy();
+    this.gridParamsBuffer?.destroy();
     this.cameraBuffer?.destroy();
     this.device?.destroy();
 
@@ -110,12 +112,14 @@ export class WebGPUService {
     this.context = undefined as any;
     this.device = undefined as any;
     this.stateBuffers = undefined as any;
-    this.kernelBuffer = undefined as any;
+    this.gridParamsBuffer = undefined as any;
     this.cameraBuffer = undefined as any;
     this.computePipeline = undefined as any;
+    this.computePingPongBindGroup = undefined as any;
+    this.computeParamsBindGroup = undefined as any;
     this.renderPipeline = undefined as any;
-    this.computeBindGroups = undefined as any;
-    this.renderBindGroups = undefined as any;
+    this.renderPingPongBindGroup = undefined as any;
+    this.renderParamsBindGroup = undefined as any;
   }
 
   start() {
@@ -216,7 +220,8 @@ export class WebGPUService {
     });
 
     pass.setPipeline(this.renderPipeline);
-    pass.setBindGroup(0, this.renderBindGroups[this.pingpongIndex]);
+    pass.setBindGroup(0, this.renderParamsBindGroup)
+    pass.setBindGroup(1, this.renderPingPongBindGroup[this.pingpongIndex]);
     pass.draw(6); // fullscreen quad
     pass.end();
 
@@ -251,7 +256,8 @@ export class WebGPUService {
 
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.computePipeline);
-    pass.setBindGroup(0, this.computeBindGroups[this.pingpongIndex]);
+    pass.setBindGroup(0, this.computeParamsBindGroup);
+    pass.setBindGroup(1, this.computePingPongBindGroup[this.pingpongIndex]);
 
     const workgroupSize = 8;
     const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
@@ -284,83 +290,40 @@ export class WebGPUService {
   ///
   /// Private Initialization Methods
   ///
-  // Initialize ping pong state buffers
-  private initStateBuffers () {
-    const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
-
-    for (let i = 0; i < 2; i++) {
-      this.stateBuffers.push(
-        this.device.createBuffer({
-          size: bufferSize,
-          usage:
-            GPUBufferUsage.STORAGE |
-            GPUBufferUsage.COPY_DST |
-            GPUBufferUsage.COPY_SRC,
-        })
-      );
-    }
-  }
-
-  private createKernelBuffer() {
-    this.kernelBuffer = this.device.createBuffer({
-      size: 8, // 2 * 4 bytes (u32)
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    const gridData = new Uint32Array([
-      this.gridWidth,
-      this.gridHeight
-    ]);
-
-    this.device.queue.writeBuffer(
-      this.kernelBuffer,
-      0,
-      gridData
-    );
-  }
-
-  private createCameraBuffer() {
-    this.cameraBuffer = this.device.createBuffer({
-      size: 16, // 4 floats
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    this.updateCameraBuffer();
-  }
-
   private createComputePipeline() {
     const shaderModule = this.device.createShaderModule({
       code: `
-struct Grid {
-    width: u32,
-    height: u32,
-};
+  struct Grid {
+      width: u32,
+      height: u32,
+  };
 
-@group(0) @binding(0)
-var<storage, read> inputCells: array<u32>;
+  @group(0) @binding(0)
+  var<uniform> grid: Grid;
 
-@group(0) @binding(1)
-var<storage, read_write> outputCells: array<u32>;
+  @group(1) @binding(0)
+  var<storage, read> inputCells: array<u32>;
 
-@group(0) @binding(2)
-var<uniform> grid: Grid;
+  @group(1) @binding(1)
+  var<storage, read_write> outputCells: array<u32>;
 
-fn index(x: u32, y: u32) -> u32 {
-    return y * grid.width + x;
-}
+  fn index(x: u32, y: u32) -> u32 {
+      return y * grid.width + x;
+  }
 
-fn getCell(x: i32, y: i32) -> u32 {
-    let w = i32(grid.width);
-    let h = i32(grid.height);
+  fn getCell(x: i32, y: i32) -> u32 {
+      let w = i32(grid.width);
+      let h = i32(grid.height);
 
-    // Wrap around edges (toroidal grid)
-    let wrappedX = (x + w) % w;
-    let wrappedY = (y + h) % h;
+      // Wrap around edges (toroidal grid)
+      let wrappedX = (x + w) % w;
+      let wrappedY = (y + h) % h;
 
-    return inputCells[index(u32(wrappedX), u32(wrappedY))];
-}
+      return inputCells[index(u32(wrappedX), u32(wrappedY))];
+  }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  @compute @workgroup_size(8, 8)
+  fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     if (id.x >= grid.width || id.y >= grid.height) {
         return;
@@ -395,7 +358,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     outputCells[i] = next;
-}
+  }
 
   `,
     });
@@ -409,47 +372,34 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     });
   }
 
-  private createBindGroup() {
-    const layout = this.computePipeline.getBindGroupLayout(0);
+  private createComputeBindGroups() {
+    const layout0 = this.computePipeline.getBindGroupLayout(0);
+    const layout1 = this.computePipeline.getBindGroupLayout(1);
 
-    this.computeBindGroups = [
+    // Create params bind group
+    this.computeParamsBindGroup = this.device.createBindGroup({
+      layout: layout0,
+      entries: [
+        { binding: 0, resource: { buffer: this.gridParamsBuffer }},
+      ]
+    });
+
+    // Create bind groups for ping pong buffer
+    this.computePingPongBindGroup = [
       // A -> B
       this.device.createBindGroup({
-        layout,
+        layout: layout1,
         entries: [
-          { binding: 0, resource: { buffer: this.stateBuffers[0] } },
-          { binding: 1, resource: { buffer: this.stateBuffers[1] } },
-          { binding: 2, resource: { buffer: this.kernelBuffer } }
+          { binding: 0, resource: { buffer: this.stateBuffers[0] }},
+          { binding: 1, resource: { buffer: this.stateBuffers[1] }},
         ],
       }),
       // B -> A
       this.device.createBindGroup({
-        layout,
+        layout: layout1,
         entries: [
-          { binding: 0, resource: { buffer: this.stateBuffers[1] } },
-          { binding: 1, resource: { buffer: this.stateBuffers[0] } },
-          { binding: 2, resource: { buffer: this.kernelBuffer } }
-        ],
-      }),
-    ];
-  }
-
-  private createRenderBindGroup() {
-    const layout = this.renderPipeline.getBindGroupLayout(0);
-
-    this.renderBindGroups = [
-      this.device.createBindGroup({
-        layout,
-        entries: [
-          { binding: 0, resource: { buffer: this.stateBuffers[0] } },
-          { binding: 1, resource: { buffer: this.cameraBuffer } },
-        ],
-      }),
-      this.device.createBindGroup({
-        layout,
-        entries: [
-          { binding: 0, resource: { buffer: this.stateBuffers[1] } },
-          { binding: 1, resource: { buffer: this.cameraBuffer } },
+          { binding: 0, resource: { buffer: this.stateBuffers[1] }},
+          { binding: 1, resource: { buffer: this.stateBuffers[0] }},
         ],
       }),
     ];
@@ -458,6 +408,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   private createRenderPipeline() {
     const shaderModule = this.device.createShaderModule({
       code: `
+
   struct Grid {
     width: u32,
     height: u32,
@@ -471,10 +422,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   };
 
   @group(0) @binding(0)
-  var<storage, read> state: array<u32>;
+  var<uniform> grid: Grid;
 
   @group(0) @binding(1)
   var<uniform> camera: Camera;
+
+  @group(1) @binding(0)
+  var<storage, read> state: array<u32>;
 
   struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -502,16 +456,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   @fragment
-  fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let width = ${this.gridWidth}u;
-    let height = ${this.gridHeight}u;
-    
+  fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {    
     // Calculate camera zoom + pan
-    let worldX = ((in.uv.x * f32(width)) / camera.zoom) + camera.offsetX;
-    let worldY = ((in.uv.y * f32(height)) / camera.zoom) + camera.offsetY;
+    let worldX = ((in.uv.x * f32(grid.width)) / camera.zoom) + camera.offsetX;
+    let worldY = ((in.uv.y * f32(grid.height)) / camera.zoom) + camera.offsetY;
 
     // Reject out of bounds values, negative values need to be compare in float before casting to u32
-    if (worldX < 0.0 || worldY < 0.0 || worldX >= f32(width) || worldY >= f32(height)) {
+    if (worldX < 0.0 || worldY < 0.0 || worldX >= f32(grid.width) || worldY >= f32(grid.height)) {
       return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
     
@@ -519,7 +470,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let x = u32(worldX);
     let y = u32(worldY);
 
-    let index = y * width + x;
+    let index = y * grid.width + x;
     let value = state[index];
 
     if (value == 1u) {
@@ -551,4 +502,78 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       },
     });
   }
+
+  private createRenderBindGroup() {
+    const layout0 = this.renderPipeline.getBindGroupLayout(0);
+    const layout1 = this.renderPipeline.getBindGroupLayout(1);
+
+    // Create params bind group
+    this.renderParamsBindGroup = this.device.createBindGroup({
+      layout: layout0,
+      entries: [
+        { binding: 0, resource: { buffer: this.gridParamsBuffer }},
+        { binding: 1, resource: { buffer: this.cameraBuffer }}
+      ]
+    });
+
+    // Create bindgroups for ping pong buffer
+    this.renderPingPongBindGroup = [
+      this.device.createBindGroup({
+        layout: layout1,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[0] }},
+        ],
+      }),
+      this.device.createBindGroup({
+        layout: layout1,
+        entries: [
+          { binding: 0, resource: { buffer: this.stateBuffers[1] } },
+        ],
+      }),
+    ];
+  }
+
+  // Initialize ping pong state buffers
+  private createPingPongStateBuffers() {
+    const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
+
+    for (let i = 0; i < 2; i++) {
+      this.stateBuffers.push(
+        this.device.createBuffer({
+          size: bufferSize,
+          usage:
+            GPUBufferUsage.STORAGE |
+            GPUBufferUsage.COPY_DST |
+            GPUBufferUsage.COPY_SRC,
+        })
+      );
+    }
+  }
+
+  private createGridParamsBuffer() {
+    this.gridParamsBuffer = this.device.createBuffer({
+      size: 8, // 2 * 4 bytes (u32)
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const gridData = new Uint32Array([
+      this.gridWidth,
+      this.gridHeight
+    ]);
+
+    this.device.queue.writeBuffer(
+      this.gridParamsBuffer,
+      0,
+      gridData
+    );
+  }
+
+  private createCameraBuffer() {
+    this.cameraBuffer = this.device.createBuffer({
+      size: 16, // 4 floats
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.updateCameraBuffer();
+  }
+
 }
