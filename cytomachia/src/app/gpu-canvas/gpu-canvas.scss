@@ -5,8 +5,12 @@
   background-color: bisque;
 }
 
-canvas {
+.camera {
   display: block;
   width: 100%;
   height: 100%;
+  cursor: grab;
+}
+.camera.clicked {
+ cursor: grabbing;
 }

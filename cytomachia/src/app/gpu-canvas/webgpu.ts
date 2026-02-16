@@ -86,7 +86,7 @@ export class WebGPUService {
     // Compute pipline init
     this.initStateBuffers();
     this.createCameraBuffer();
-    this.randomizeGrid();
+    await this.randomizeGrid();
     this.createKernelBuffer();
     this.createComputePipeline();
     this.createBindGroup();

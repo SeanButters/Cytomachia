@@ -109,10 +109,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     const rect = this.canvas.getBoundingClientRect();
 
     const mouseX = (e.clientX - rect.left) * this.dpr;
-    const mouseY = (this.canvas.height - e.clientY - rect.top) * this.dpr;
-
-    console.log(mouseX + ", " + mouseY);
-    console.log(e.clientX + ", " + e.clientY);
+    const mouseY = this.canvas.height - ((e.clientY - rect.top) * this.dpr);
 
     const zoomFactor = 1.1;
 
@@ -122,12 +119,14 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   };
 
   private onMouseDown = (e: MouseEvent) => {
+    this.canvas.classList.add('clicked');
     this.isDragging = true;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
   };
 
   private onMouseUp = () => {
+    this.canvas.classList.remove('clicked');
     this.isDragging = false;
   };
 
