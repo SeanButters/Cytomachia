@@ -19,13 +19,18 @@ export class WebGPUService {
   private adapter!: GPUAdapter | null;
   private format!: GPUTextureFormat;
 
+  // Buffer vars
+  private stateBuffers: GPUBuffer[] = [];
+  private pingpongIndex = 0;
+  private rulesetsBuffers: GPUBuffer[] = [];
+  private rulsetIndex = 0;
+
   // Compute pipleine vars
   private computePipeline!: GPUComputePipeline;
-  private stateBuffers: GPUBuffer[] = [];
   private computePingPongBindGroup: GPUBindGroup[] =[];
-  private pingpongIndex = 0;
   private gridParamsBuffer!: GPUBuffer;
   private computeParamsBindGroup!: GPUBindGroup;
+  private rulsetsBindGroup: GPUBindGroup[] = [];
   // Render pipeline vars
   private renderPipeline!: GPURenderPipeline;
   private renderPingPongBindGroup: GPUBindGroup[] = [];
@@ -33,13 +38,17 @@ export class WebGPUService {
 
   // Simulation constraints
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
-  private gridWidth = 2560;
-  private gridHeight = 1444;
+  private gridSize: orderedPair = {
+    x: 2560,
+    y: 1444
+  }
+  private numRulesets = 1;
+  private neighborhoodSize = 8;
 
   // Simulation loop state vars
   private animationId: number | null = null;
   private isRunning: boolean = false;
-  private targetStepsPerSecond = 30; // Target FPS
+  private targetStepsPerSecond = 60; // Target FPS
   private lastFrameTime = 0;
   private stepAccumulator = 0;
 
@@ -47,13 +56,13 @@ export class WebGPUService {
   private cameraBuffer!: GPUBuffer;
   private cameraZoom = 4;
   private cameraOffset: orderedPair = {
-    x: Math.floor((this.gridWidth / 2) - (this.gridWidth / (this.cameraZoom * 2))),
-    y: Math.floor((this.gridHeight / 2) - (this.gridHeight / (this.cameraZoom * 2)))
+    x: Math.floor((this.gridSize.x / 2) - (this.gridSize.x / (this.cameraZoom * 2))),
+    y: Math.floor((this.gridSize.y / 2) - (this.gridSize.y / (this.cameraZoom * 2)))
   };
   private gridScaleFactor: orderedPair = {
     x: 1.0,
     y: 1.0
- };
+  };
 
   ///
   /// Public API methods
@@ -103,7 +112,14 @@ export class WebGPUService {
     this.stop();
 
     // Release allocated memory
-    this.stateBuffers.forEach((buffer) => buffer?.destroy());
+    this.stateBuffers.forEach((buffer) => {
+      buffer?.destroy();
+      buffer = undefined as any;
+    });
+    this.rulesetsBuffers.forEach((buffer) => {
+      buffer?.destroy();
+      buffer = undefined as any;
+    });
     this.gridParamsBuffer?.destroy();
     this.cameraBuffer?.destroy();
     this.device?.destroy();
@@ -113,10 +129,12 @@ export class WebGPUService {
     this.device = undefined as any;
     this.stateBuffers = undefined as any;
     this.gridParamsBuffer = undefined as any;
+    this.rulesetsBuffers = undefined as any;
     this.cameraBuffer = undefined as any;
     this.computePipeline = undefined as any;
     this.computePingPongBindGroup = undefined as any;
     this.computeParamsBindGroup = undefined as any;
+    this.rulsetsBindGroup = undefined as any;
     this.renderPipeline = undefined as any;
     this.renderPingPongBindGroup = undefined as any;
     this.renderParamsBindGroup = undefined as any;
@@ -152,8 +170,8 @@ export class WebGPUService {
 
   // Pan camera
   cameraMove(dx: number, dy: number) {
-    this.cameraOffset.x -= dx / (this.cameraZoom * this.gridScaleFactor.x)
-    this.cameraOffset.y -= dy / (this.cameraZoom * this.gridScaleFactor.y)
+    this.cameraOffset.x -= dx / (this.cameraZoom * this.gridScaleFactor.x);
+    this.cameraOffset.y -= dy / (this.cameraZoom * this.gridScaleFactor.y);
 
     this.updateCameraBuffer();
   }
@@ -175,8 +193,8 @@ export class WebGPUService {
 
   // Update gride scale factor with canvas resize events
   resizeCanvas(canvasWidth: number, canvasHeight: number) {
-    this.gridScaleFactor.x = canvasWidth / this.gridWidth;
-    this.gridScaleFactor.y = canvasHeight / this.gridHeight;
+    this.gridScaleFactor.x = canvasWidth / this.gridSize.x;
+    this.gridScaleFactor.y = canvasHeight / this.gridSize.y;
   }
 
   // Randomize gridstate of simulation
@@ -189,9 +207,10 @@ export class WebGPUService {
     await this.device.queue.onSubmittedWorkDone();
 
     // Randomize array
-    const newCells = new Uint32Array(this.gridWidth * this.gridHeight);
+    const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
     for (let i = 0; i < newCells.length; i++) {
-      newCells[i] = Math.random() > 0.5 ? 1 : 0;
+      const temp = Math.floor(Math.random() * 9);
+      newCells[i] = temp > 1 ? 0 : temp;
     }
 
     // Update both buffers
@@ -260,8 +279,8 @@ export class WebGPUService {
     pass.setBindGroup(1, this.computePingPongBindGroup[this.pingpongIndex]);
 
     const workgroupSize = 8;
-    const dispatchX = Math.ceil(this.gridWidth / workgroupSize);
-    const dispatchY = Math.ceil(this.gridHeight / workgroupSize);
+    const dispatchX = Math.ceil(this.gridSize.x / workgroupSize);
+    const dispatchY = Math.ceil(this.gridSize.y / workgroupSize);
 
     pass.dispatchWorkgroups(dispatchX, dispatchY);
     pass.end();
@@ -319,7 +338,12 @@ export class WebGPUService {
       let wrappedX = (x + w) % w;
       let wrappedY = (y + h) % h;
 
-      return inputCells[index(u32(wrappedX), u32(wrappedY))];
+      if(inputCells[index(u32(wrappedX), u32(wrappedY))] != 0u) {
+        return 1u;
+      }
+      else {
+        return 0u;
+      }
   }
 
   @compute @workgroup_size(8, 8)
@@ -331,6 +355,8 @@ export class WebGPUService {
 
     let x = i32(id.x);
     let y = i32(id.y);
+    let i = index(id.x, id.y);
+    let current = inputCells[i];
 
     var neighborCount: u32 = 0u;
 
@@ -344,20 +370,18 @@ export class WebGPUService {
         }
     }
 
-    let i = index(id.x, id.y);
-    let current = inputCells[i];
+    if (current == 0u && (neighborCount == 3u || neighborCount >= 6u)) {
+        outputCells[i] = 1u;
+        return;
+    }
 
-    var next: u32 = 0u;
-
+    // S
     if (current == 1u && (neighborCount == 2u || neighborCount == 3u)) {
-        next = 1u;
+        outputCells[i] = 1u;
+        return;
     }
 
-    if (current == 0u && neighborCount == 3u) {
-        next = 1u;
-    }
-
-    outputCells[i] = next;
+    outputCells[i] = 0u;
   }
 
   `,
@@ -457,24 +481,37 @@ export class WebGPUService {
 
   @fragment
   fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {    
-    // Calculate camera zoom + pan
-    let worldX = ((in.uv.x * f32(grid.width)) / camera.zoom) + camera.offsetX;
-    let worldY = ((in.uv.y * f32(grid.height)) / camera.zoom) + camera.offsetY;
+    let f32width = f32(grid.width);
+    let f32height = f32(grid.height);
 
-    // Reject out of bounds values, negative values need to be compare in float before casting to u32
-    if (worldX < 0.0 || worldY < 0.0 || worldX >= f32(grid.width) || worldY >= f32(grid.height)) {
-      return vec4<f32>(0.1, 0.1, 0.1, 1.0);
+    // Calculate camera zoom + pan
+    let worldX = ((in.uv.x * f32width) / camera.zoom) + camera.offsetX;
+    let worldY = ((in.uv.y * f32height) / camera.zoom) + camera.offsetY;
+
+    var x = 0u;    
+    if( worldX < 0) {
+      x = grid.width - u32(abs(worldX) % f32width);
+    }
+    else {
+      x = u32(worldX) % grid.width;
     }
     
-    // Convert float positions to u32 grid positions
-    let x = u32(worldX);
-    let y = u32(worldY);
+    var y = 0u;
+    if( worldY < 0) {
+      y = grid.height - u32(abs(worldY) % f32height);
+    }
+    else {
+      y = u32(worldY) % grid.height;
+    }
 
     let index = y * grid.width + x;
     let value = state[index];
 
     if (value == 1u) {
       return vec4<f32>(0.5, 1.0, 1.0, 1.0);
+    }
+    if (value == 2u) {
+      return vec4<f32>(1.0, 0.5, 0.5, 1.0);
     }
 
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
@@ -535,7 +572,7 @@ export class WebGPUService {
 
   // Initialize ping pong state buffers
   private createPingPongStateBuffers() {
-    const bufferSize = this.gridWidth * this.gridHeight * this.cellSizeBytes
+    const bufferSize = this.gridSize.x * this.gridSize.y * this.cellSizeBytes;
 
     for (let i = 0; i < 2; i++) {
       this.stateBuffers.push(
@@ -557,8 +594,8 @@ export class WebGPUService {
     });
 
     const gridData = new Uint32Array([
-      this.gridWidth,
-      this.gridHeight
+      this.gridSize.x,
+      this.gridSize.y
     ]);
 
     this.device.queue.writeBuffer(
