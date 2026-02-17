@@ -463,7 +463,7 @@ export class WebGPUService {
 
     // Reject out of bounds values, negative values need to be compare in float before casting to u32
     if (worldX < 0.0 || worldY < 0.0 || worldX >= f32(grid.width) || worldY >= f32(grid.height)) {
-      return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+      return vec4<f32>(0.1, 0.1, 0.1, 1.0);
     }
     
     // Convert float positions to u32 grid positions
@@ -474,7 +474,7 @@ export class WebGPUService {
     let value = state[index];
 
     if (value == 1u) {
-      return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+      return vec4<f32>(0.5, 1.0, 1.0, 1.0);
     }
 
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
