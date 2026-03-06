@@ -24,6 +24,7 @@ export class WebGPUService {
   private pingpongIndex = 0;
   private rulesetsBuffers: GPUBuffer[] = [];
   private rulsetIndex = 0;
+  private colorBuffer!: GPUBuffer;
 
   // Compute pipleine vars
   private computePipeline!: GPUComputePipeline;
@@ -48,7 +49,7 @@ export class WebGPUService {
   // Simulation loop state vars
   private animationId: number | null = null;
   private isRunning: boolean = false;
-  private targetStepsPerSecond = 60; // Target FPS
+  private targetStepsPerSecond = 24; // Target FPS
   private lastFrameTime = 0;
   private stepAccumulator = 0;
 
@@ -94,11 +95,11 @@ export class WebGPUService {
       alphaMode: 'opaque',
     });
 
+    // Create buffers in memory
+    this.createBuffers();
+
     // Compute pipline init
-    this.createPingPongStateBuffers();
-    this.createCameraBuffer();
     await this.randomizeGrid();
-    this.createGridParamsBuffer();
     this.createComputePipeline();
     this.createComputeBindGroups();
     // Render pipeline init
@@ -131,6 +132,7 @@ export class WebGPUService {
     this.gridParamsBuffer = undefined as any;
     this.rulesetsBuffers = undefined as any;
     this.cameraBuffer = undefined as any;
+    this.colorBuffer = undefined as any;
     this.computePipeline = undefined as any;
     this.computePingPongBindGroup = undefined as any;
     this.computeParamsBindGroup = undefined as any;
@@ -209,7 +211,7 @@ export class WebGPUService {
     // Randomize array
     const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
     for (let i = 0; i < newCells.length; i++) {
-      const temp = Math.floor(Math.random() * 9);
+      const temp = Math.floor(Math.random() * 10);
       newCells[i] = temp > 1 ? 0 : temp;
     }
 
@@ -306,6 +308,23 @@ export class WebGPUService {
     );
   }
 
+  public updateColors(r: number, g: number, b: number, a: number) {
+    // Convert from 256 base values to 0->1.0 floats
+    const colorData = new Float32Array([
+      Math.max(0.0, Math.min(r / 255.0, 1.0)),
+      Math.max(0.0, Math.min(g / 255.0, 1.0)),
+      Math.max(0.0, Math.min(b / 255.0, 1.0)),
+      Math.max(0.0, Math.min(a / 255.0, 1.0))
+    ]);
+    console.log(colorData);
+
+    this.device.queue.writeBuffer(
+      this.colorBuffer,
+      0,
+      colorData
+    );
+  }
+
   ///
   /// Private Initialization Methods
   ///
@@ -370,7 +389,7 @@ export class WebGPUService {
         }
     }
 
-    if (current == 0u && (neighborCount == 3u || neighborCount >= 6u)) {
+    if (current == 0u && (neighborCount == 3u || neighborCount == 6u)) {
         outputCells[i] = 1u;
         return;
     }
@@ -445,11 +464,21 @@ export class WebGPUService {
     _padding: f32,
   };
 
+  struct Colors {
+      r: f32,
+      g: f32,
+      b: f32,
+      a: f32,
+  };
+
   @group(0) @binding(0)
   var<uniform> grid: Grid;
 
   @group(0) @binding(1)
   var<uniform> camera: Camera;
+
+  @group(0) @binding(2)
+  var<uniform> colors: Colors;
 
   @group(1) @binding(0)
   var<storage, read> state: array<u32>;
@@ -508,7 +537,7 @@ export class WebGPUService {
     let value = state[index];
 
     if (value == 1u) {
-      return vec4<f32>(0.5, 1.0, 1.0, 1.0);
+      return vec4<f32>(colors.r, colors.g, colors.b, colors.a);
     }
     if (value == 2u) {
       return vec4<f32>(1.0, 0.5, 0.5, 1.0);
@@ -549,7 +578,8 @@ export class WebGPUService {
       layout: layout0,
       entries: [
         { binding: 0, resource: { buffer: this.gridParamsBuffer }},
-        { binding: 1, resource: { buffer: this.cameraBuffer }}
+        { binding: 1, resource: { buffer: this.cameraBuffer }},
+        { binding: 2, resource: { buffer: this.colorBuffer }}
       ]
     });
 
@@ -568,6 +598,13 @@ export class WebGPUService {
         ],
       }),
     ];
+  }
+
+  private createBuffers() {
+      this.createGridParamsBuffer();
+      this.createPingPongStateBuffers();
+      this.createCameraBuffer();
+      this.createColorBuffer();
   }
 
   // Initialize ping pong state buffers
@@ -611,6 +648,14 @@ export class WebGPUService {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.updateCameraBuffer();
+  }
+
+  private createColorBuffer() {
+    this.colorBuffer = this.device.createBuffer({
+      size: 16, // 4 * 4 byte floats r,g,b,a
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.updateColors(128, 255, 255, 255);
   }
 
 }

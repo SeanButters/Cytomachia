@@ -97,6 +97,10 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     if (e.code === 'KeyR') {
       this.gpu.randomizeGrid();
     }
+    if (e.code === 'KeyC') {
+      console.log("hello!");
+      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 255);
+    }
   };
 
   private onScroll = (e: WheelEvent) => {
