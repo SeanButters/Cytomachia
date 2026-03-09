@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { createNoise2D } from "simplex-noise";
 
 interface orderedPair {
   x: number,
@@ -39,11 +40,8 @@ export class WebGPUService {
 
   // Simulation constraints
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
-  private gridSize: orderedPair = {
-    x: 2560,
-    y: 1444
-  }
-  private numRulesets = 1;
+  private gridSize: orderedPair = { x: 2560, y: 1444 };
+  private MAX_RULESETS = 1;
   private neighborhoodSize = 8;
 
   // Simulation loop state vars
@@ -60,10 +58,7 @@ export class WebGPUService {
     x: Math.floor((this.gridSize.x / 2) - (this.gridSize.x / (this.cameraZoom * 2))),
     y: Math.floor((this.gridSize.y / 2) - (this.gridSize.y / (this.cameraZoom * 2)))
   };
-  private gridScaleFactor: orderedPair = {
-    x: 1.0,
-    y: 1.0
-  };
+  private gridScaleFactor: orderedPair = { x: 1.0, y: 1.0 };
 
   ///
   /// Public API methods
@@ -99,7 +94,7 @@ export class WebGPUService {
     this.createBuffers();
 
     // Compute pipline init
-    await this.randomizeGrid();
+    await this.randomizeGrid('fractal');
     this.createComputePipeline();
     this.createComputeBindGroups();
     // Render pipeline init
@@ -199,31 +194,6 @@ export class WebGPUService {
     this.gridScaleFactor.y = canvasHeight / this.gridSize.y;
   }
 
-  // Randomize gridstate of simulation
-  async randomizeGrid() {
-    // Pause simulation loop
-    const wasRunning = this.isRunning;
-    this.isRunning = false;
-
-    // Wait for GPU to finish work
-    await this.device.queue.onSubmittedWorkDone();
-
-    // Randomize array
-    const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
-    for (let i = 0; i < newCells.length; i++) {
-      const temp = Math.floor(Math.random() * 10);
-      newCells[i] = temp > 1 ? 0 : temp;
-    }
-
-    // Update both buffers
-    this.device.queue.writeBuffer(this.stateBuffers[0], 0, newCells);
-    this.device.queue.writeBuffer(this.stateBuffers[1], 0, newCells);
-
-    this.pingpongIndex = 0;  // Reset ping-pong index
-
-    this.isRunning = wasRunning;
-  }
-
   // Render the current simulation state
   renderFrame() {
     const encoder = this.device.createCommandEncoder();
@@ -247,6 +217,37 @@ export class WebGPUService {
     pass.end();
 
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  // Randomize gridstate of simulation
+  async randomizeGrid(method: string) {
+    // Pause simulation loop
+    const wasRunning = this.isRunning;
+    this.isRunning = false;
+
+    // Wait for GPU to finish work
+    await this.device.queue.onSubmittedWorkDone();
+
+    // Randomize array
+    const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
+
+    if (method === 'fractal') {
+      this.fractalNosie(newCells);
+    }
+    else if (method === 'simplex') {
+      this.simplexNoise(newCells);
+    }
+    else {
+      this.whiteNoise(newCells);
+    }
+
+    // Update both buffers
+    this.device.queue.writeBuffer(this.stateBuffers[0], 0, newCells);
+    this.device.queue.writeBuffer(this.stateBuffers[1], 0, newCells);
+
+    this.pingpongIndex = 0;  // Reset ping-pong index
+
+    this.isRunning = wasRunning;
   }
 
   ///
@@ -308,21 +309,67 @@ export class WebGPUService {
     );
   }
 
-  public updateColors(r: number, g: number, b: number, a: number) {
+  public updateColors(r: number, g: number, b: number, index: number) {
     // Convert from 256 base values to 0->1.0 floats
     const colorData = new Float32Array([
       Math.max(0.0, Math.min(r / 255.0, 1.0)),
       Math.max(0.0, Math.min(g / 255.0, 1.0)),
       Math.max(0.0, Math.min(b / 255.0, 1.0)),
-      Math.max(0.0, Math.min(a / 255.0, 1.0))
+      1.0
     ]);
     console.log(colorData);
 
     this.device.queue.writeBuffer(
       this.colorBuffer,
-      0,
+      index * 16, // 4 values * 4 bytes
       colorData
     );
+  }
+
+  private whiteNoise (cells: Uint32Array) {
+    for (let i = 0; i < cells.length; i++) {
+      const temp = Math.floor(Math.random() * 10);
+      cells[i] = temp > 1 ? 0 : temp;
+    }
+  }
+
+  private simplexNoise (cells: Uint32Array) {
+    const noise = createNoise2D();
+    const scale = 0.05;
+
+    for (let y = 0; y < this.gridSize.y; y++) {
+      for (let x = 0; x < this.gridSize.x; x++) {
+        const i = y * this.gridSize.x + x;
+
+        const n = noise(x * scale, y * scale);
+        cells[i] = Math.floor((n + 1) * 0.5 * (this.MAX_RULESETS + 1));
+      }
+    }
+  }
+  
+  private fractalNosie (cells: Uint32Array) {
+    const noise = createNoise2D();
+
+    for (let y = 0; y < this.gridSize.y; y++) {
+      for (let x = 0; x < this.gridSize.x; x++) {
+        const i = y * this.gridSize.x + x;
+
+        let value = 0;
+        let amp = 1;
+        let freq = 0.02;
+        const rounds = 4;
+
+        for (let i = 0; i < rounds; i++) {
+          value += noise(x * freq, y * freq) * amp;
+          amp *= 0.5;
+          freq *= 2;
+        }
+        value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize
+
+        const n = Math.floor((value + 1) * 0.5 * (this.MAX_RULESETS + 1));
+        cells[i] = n;
+      }
+    }
   }
 
   ///
@@ -464,13 +511,6 @@ export class WebGPUService {
     _padding: f32,
   };
 
-  struct Colors {
-      r: f32,
-      g: f32,
-      b: f32,
-      a: f32,
-  };
-
   @group(0) @binding(0)
   var<uniform> grid: Grid;
 
@@ -478,7 +518,7 @@ export class WebGPUService {
   var<uniform> camera: Camera;
 
   @group(0) @binding(2)
-  var<uniform> colors: Colors;
+  var<uniform> colors: array<vec4<f32>, ${this.MAX_RULESETS + 1}>; // TODO update with more colors
 
   @group(1) @binding(0)
   var<storage, read> state: array<u32>;
@@ -536,14 +576,7 @@ export class WebGPUService {
     let index = y * grid.width + x;
     let value = state[index];
 
-    if (value == 1u) {
-      return vec4<f32>(colors.r, colors.g, colors.b, colors.a);
-    }
-    if (value == 2u) {
-      return vec4<f32>(1.0, 0.5, 0.5, 1.0);
-    }
-
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    return colors[value];
   }
   `,
     });
@@ -652,10 +685,11 @@ export class WebGPUService {
 
   private createColorBuffer() {
     this.colorBuffer = this.device.createBuffer({
-      size: 16, // 4 * 4 byte floats r,g,b,a
+      size: (this.MAX_RULESETS + 1) * 16, // 4 * 4 byte floats r,g,b,a
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    this.updateColors(128, 255, 255, 255);
+    this.updateColors(0, 0, 0, 0);
+    this.updateColors(128, 255, 255, 1);
   }
 
 }
