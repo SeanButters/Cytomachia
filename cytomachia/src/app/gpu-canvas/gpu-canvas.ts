@@ -22,6 +22,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   ) {}
 
   private isPaused = false;
+  private noiseGenerator = 'fractal'
 
   // Camera stuff
   private dpr!: number;
@@ -83,6 +84,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   private pauseLoop() {
       this.gpu.pause();
+      if(this.isPaused) console.log("unpaused");
+      else console.log("paused");
       this.isPaused = !this.isPaused;
   }
 
@@ -95,7 +98,27 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
       this.gpu.stepOnce();
     }
     if (e.code === 'KeyR') {
-      this.gpu.randomizeGrid();
+      this.gpu.randomizeGrid(this.noiseGenerator);
+    }
+    if (e.code === 'Digit1') {
+      this.noiseGenerator = 'white noise';
+      console.log("Using white noise generator");
+    }
+    if (e.code === 'Digit2') {
+      this.noiseGenerator = 'simplex';
+      console.log("Using simplex noise generator");
+    }
+    if (e.code === 'Digit3') {
+      this.noiseGenerator = 'fractal';
+      console.log("Using fractal noise generator");
+    }
+    if (e.code === 'KeyC') {
+      // TODO better implementation
+      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
+    }
+    if (e.code === 'KeyB') {
+      // TODO better implementation
+      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
     }
   };
 
