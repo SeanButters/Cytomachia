@@ -21,18 +21,20 @@ export class WebGPUService {
   private format!: GPUTextureFormat;
 
   // Buffer vars
+  private gridParamsBuffer!: GPUBuffer;
   private stateBuffers: GPUBuffer[] = [];
   private pingpongIndex = 0;
-  private rulesetsBuffers: GPUBuffer[] = [];
-  private rulsetIndex = 0;
+  private rulesBuffer!: GPUBuffer; //[] = []; //TODO
+  private bNeighborhoodBuffer!: GPUBuffer;
+  private sNeighborhoodBuffer!: GPUBuffer;
+  //private rulsetIndex = 0;
   private colorBuffer!: GPUBuffer;
 
   // Compute pipleine vars
   private computePipeline!: GPUComputePipeline;
   private computePingPongBindGroup: GPUBindGroup[] =[];
-  private gridParamsBuffer!: GPUBuffer;
   private computeParamsBindGroup!: GPUBindGroup;
-  private rulsetsBindGroup: GPUBindGroup[] = [];
+  private rulesetBindGroup!: GPUBindGroup; //[] = [];
   // Render pipeline vars
   private renderPipeline!: GPURenderPipeline;
   private renderPingPongBindGroup: GPUBindGroup[] = [];
@@ -42,7 +44,8 @@ export class WebGPUService {
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
   private gridSize: orderedPair = { x: 2560, y: 1444 };
   private MAX_RULESETS = 1;
-  private neighborhoodSize = 8;
+  private MAX_NEIGHBORHOOD_SIZE = 15;
+  private BITMASK_LENGTH = Math.ceil(((this.MAX_NEIGHBORHOOD_SIZE ** 2) - 1) / 32);
 
   // Simulation loop state vars
   private animationId: number | null = null;
@@ -112,12 +115,16 @@ export class WebGPUService {
       buffer?.destroy();
       buffer = undefined as any;
     });
-    this.rulesetsBuffers.forEach((buffer) => {
-      buffer?.destroy();
-      buffer = undefined as any;
-    });
+    // this.rulesetsBuffers.forEach((buffer) => {
+    //   buffer?.destroy();
+    //   buffer = undefined as any;
+    // });
+    this.rulesBuffer?.destroy();
+    this.bNeighborhoodBuffer?.destroy();
+    this.sNeighborhoodBuffer?.destroy();
     this.gridParamsBuffer?.destroy();
     this.cameraBuffer?.destroy();
+    this.colorBuffer?.destroy();
     this.device?.destroy();
 
     // Clear references to webGPU variables
@@ -125,13 +132,16 @@ export class WebGPUService {
     this.device = undefined as any;
     this.stateBuffers = undefined as any;
     this.gridParamsBuffer = undefined as any;
-    this.rulesetsBuffers = undefined as any;
+    //this.rulesetsBuffers = undefined as any;
+    this.rulesBuffer = undefined as any;
+    this.bNeighborhoodBuffer = undefined as any;
+    this.sNeighborhoodBuffer = undefined as any;
     this.cameraBuffer = undefined as any;
     this.colorBuffer = undefined as any;
     this.computePipeline = undefined as any;
     this.computePingPongBindGroup = undefined as any;
     this.computeParamsBindGroup = undefined as any;
-    this.rulsetsBindGroup = undefined as any;
+    this.rulesetBindGroup = undefined as any;
     this.renderPipeline = undefined as any;
     this.renderPingPongBindGroup = undefined as any;
     this.renderParamsBindGroup = undefined as any;
@@ -211,7 +221,7 @@ export class WebGPUService {
     });
 
     pass.setPipeline(this.renderPipeline);
-    pass.setBindGroup(0, this.renderParamsBindGroup)
+    pass.setBindGroup(0, this.renderParamsBindGroup);
     pass.setBindGroup(1, this.renderPingPongBindGroup[this.pingpongIndex]);
     pass.draw(6); // fullscreen quad
     pass.end();
@@ -280,6 +290,7 @@ export class WebGPUService {
     pass.setPipeline(this.computePipeline);
     pass.setBindGroup(0, this.computeParamsBindGroup);
     pass.setBindGroup(1, this.computePingPongBindGroup[this.pingpongIndex]);
+    pass.setBindGroup(2, this.rulesetBindGroup);
 
     const workgroupSize = 8;
     const dispatchX = Math.ceil(this.gridSize.x / workgroupSize);
@@ -292,6 +303,40 @@ export class WebGPUService {
 
     // Flip index
     this.pingpongIndex ^= 1;
+  }
+
+  private index(x: number, y: number, width: number ): number {
+    return (y * width) + x;
+  }
+
+  private updateNeighborhoodBuffer(index: number, rule: number) {
+    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
+    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
+    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
+    let weightCount = 0;
+    let weightSum = 0;
+
+    const center: orderedPair = { 
+      x: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2),
+      y: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2) 
+    }
+
+    kernel[this.index(center.x - 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;     kernel[this.index(center.x, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 0;     kernel[this.index(center.x + 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+
+    for(const weight of kernel){
+      if (weight > 0) weightCount++;
+      weightSum += weight;
+    }
+
+    const scale = weightCount/weightSum;
+
+    new Uint32Array(buffer, 0, kernelArea).set(kernel);
+    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+
+    if(rule === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, buffer);
+    else if (rule === 1) this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, buffer);
   }
 
   private updateCameraBuffer() {
@@ -317,11 +362,11 @@ export class WebGPUService {
       Math.max(0.0, Math.min(b / 255.0, 1.0)),
       1.0
     ]);
-    console.log(colorData);
+    console.log(r, g, b);
 
     this.device.queue.writeBuffer(
       this.colorBuffer,
-      index * 16, // 4 values * 4 bytes
+      (index + 1) * 16, // 4 values * 4 bytes
       colorData
     );
   }
@@ -378,10 +423,25 @@ export class WebGPUService {
   private createComputePipeline() {
     const shaderModule = this.device.createShaderModule({
       code: `
+
+  // Buffer inputs
   struct Grid {
-      width: u32,
-      height: u32,
+    width: u32,
+    height: u32,
+    kernelSize: u32,
+    _padding: u32
   };
+
+  struct AutomataRules {
+    birthMask: array<u32,${this.BITMASK_LENGTH}>, // Match bitmask size to square of kernel size
+    surviveMask: array<u32,${this.BITMASK_LENGTH}>,
+    value: u32,
+  }
+
+  struct Neighborhood {
+    kernel: array<u32,${this.MAX_NEIGHBORHOOD_SIZE ** 2}>,
+    scale: f32
+  }
 
   @group(0) @binding(0)
   var<uniform> grid: Grid;
@@ -392,31 +452,74 @@ export class WebGPUService {
   @group(1) @binding(1)
   var<storage, read_write> outputCells: array<u32>;
 
+  @group(2) @binding(0)
+  var<storage, read> rules: AutomataRules;
+
+  @group(2) @binding(1)
+  var<storage, read> birthNeighborhood: Neighborhood;
+
+  @group(2) @binding(2)
+  var<storage, read> surviveNeighborhood: Neighborhood;
+
+
+  // Helper functions
+
   fn index(x: u32, y: u32) -> u32 {
-      return y * grid.width + x;
+    return y * grid.width + x;
   }
 
   fn getCell(x: i32, y: i32) -> u32 {
-      let w = i32(grid.width);
-      let h = i32(grid.height);
+    let w = i32(grid.width);
+    let h = i32(grid.height);
 
-      // Wrap around edges (toroidal grid)
-      let wrappedX = (x + w) % w;
-      let wrappedY = (y + h) % h;
+    // Wrap around edges (toroidal grid)
+    let wrappedX = (x + w) % w;
+    let wrappedY = (y + h) % h;
 
-      if(inputCells[index(u32(wrappedX), u32(wrappedY))] != 0u) {
-        return 1u;
-      }
-      else {
-        return 0u;
-      }
+    let cellValue = inputCells[index(u32(wrappedX), u32(wrappedY))];
+
+    if(cellValue == rules.value){
+      return cellValue;
+    }
+    else {
+      return 0u;
+    }
   }
+
+  fn checkBitmask(mask: array<u32,${this.BITMASK_LENGTH}>, value: u32) -> bool {
+    let word = value >> 5u;       // divide by 32
+    let bit  = value & 31u;       // mod 32
+    return (mask[word] & (1u << bit)) != 0u;
+  }
+
+  fn countNeighbors(neighborhood: Neighborhood, x: i32, y: i32) -> u32 {
+    var neighborCount: u32 = 0u;
+    let offset: i32 = i32(grid.kernelSize >> 1u);
+
+    for (var oy = 0u; oy < grid.kernelSize; oy++) {
+      for (var ox = 0u; ox < grid.kernelSize; ox++) {
+        let ki = oy * grid.kernelSize + ox;
+        let weight = neighborhood.kernel[ki];
+
+        if (weight != 0u) {
+          let nx = x + i32(ox) - offset;
+          let ny = y + i32(oy) - offset;
+          neighborCount += getCell(nx,ny) * weight;
+        }
+      }
+    }
+
+    return u32(f32(neighborCount) * neighborhood.scale);
+  }
+
+
+  // Compute shader
 
   @compute @workgroup_size(8, 8)
   fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     if (id.x >= grid.width || id.y >= grid.height) {
-        return;
+      return;
     }
 
     let x = i32(id.x);
@@ -425,29 +528,33 @@ export class WebGPUService {
     let current = inputCells[i];
 
     var neighborCount: u32 = 0u;
+    
+    // Check birth neighborhood/rule
+    if (current == 0u) {
+      let neighborCount = countNeighbors(birthNeighborhood, x, y);
 
-    // 8 neighbors
-    for (var oy = -1; oy <= 1; oy++) {
-        for (var ox = -1; ox <= 1; ox++) {
-            if (ox == 0 && oy == 0) {
-                continue;
-            }
-            neighborCount += getCell(x + ox, y + oy);
-        }
+      if(checkBitmask(rules.birthMask, neighborCount)) {
+        outputCells[i] = rules.value;
+      }
+      else {
+        outputCells[i] = 0u;
+      }
     }
+    // Check survive neighborhood/rule
+    else if (current == rules.value) {
+      let neighborCount = countNeighbors(surviveNeighborhood, x, y);
 
-    if (current == 0u && (neighborCount == 3u || neighborCount == 6u)) {
-        outputCells[i] = 1u;
-        return;
+      if(checkBitmask(rules.surviveMask, neighborCount)) {
+        outputCells[i] = rules.value;
+      }
+      else {
+        outputCells[i] = 0u;
+      }
     }
-
-    // S
-    if (current == 1u && (neighborCount == 2u || neighborCount == 3u)) {
-        outputCells[i] = 1u;
-        return;
+    else {
+      outputCells[i] = current;
     }
-
-    outputCells[i] = 0u;
+    return;
   }
 
   `,
@@ -465,6 +572,7 @@ export class WebGPUService {
   private createComputeBindGroups() {
     const layout0 = this.computePipeline.getBindGroupLayout(0);
     const layout1 = this.computePipeline.getBindGroupLayout(1);
+    const layout2 = this.computePipeline.getBindGroupLayout(2);
 
     // Create params bind group
     this.computeParamsBindGroup = this.device.createBindGroup({
@@ -493,6 +601,16 @@ export class WebGPUService {
         ],
       }),
     ];
+
+    // Create ruleset bind group
+    this.rulesetBindGroup = this.device.createBindGroup({
+      layout: layout2,
+      entries: [
+        { binding: 0, resource: { buffer: this.rulesBuffer } },
+        { binding: 1, resource: { buffer: this.bNeighborhoodBuffer } },
+        { binding: 2, resource: { buffer: this.sNeighborhoodBuffer } },
+      ]
+    });
   }
 
   private createRenderPipeline() {
@@ -502,6 +620,8 @@ export class WebGPUService {
   struct Grid {
     width: u32,
     height: u32,
+    kernel_size: u32,
+    _padding: u32
   };
 
   struct Camera {
@@ -518,7 +638,7 @@ export class WebGPUService {
   var<uniform> camera: Camera;
 
   @group(0) @binding(2)
-  var<uniform> colors: array<vec4<f32>, ${this.MAX_RULESETS + 1}>; // TODO update with more colors
+  var<uniform> colors: array<vec4<f32>,${this.MAX_RULESETS + 1}>;
 
   @group(1) @binding(0)
   var<storage, read> state: array<u32>;
@@ -636,6 +756,7 @@ export class WebGPUService {
   private createBuffers() {
       this.createGridParamsBuffer();
       this.createPingPongStateBuffers();
+      this.createRulesetBuffers();
       this.createCameraBuffer();
       this.createColorBuffer();
   }
@@ -659,13 +780,15 @@ export class WebGPUService {
 
   private createGridParamsBuffer() {
     this.gridParamsBuffer = this.device.createBuffer({
-      size: 8, // 2 * 4 bytes (u32)
+      size: 16, // 4 * 4 bytes (u32)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const gridData = new Uint32Array([
       this.gridSize.x,
-      this.gridSize.y
+      this.gridSize.y,
+      this.MAX_NEIGHBORHOOD_SIZE,
+      0 // padding
     ]);
 
     this.device.queue.writeBuffer(
@@ -673,6 +796,37 @@ export class WebGPUService {
       0,
       gridData
     );
+  }
+
+  private createRulesetBuffers() {
+    this.rulesBuffer = this.device.createBuffer({
+      size: ((this.BITMASK_LENGTH * 2) + 1) * 4 , // 2 bitmasks + 1 u32 * 4 bytes
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    const rules = new Uint32Array((this.BITMASK_LENGTH * 2) + 1);
+    // Birth: 3 neighbors
+    rules[0] |= (1 << 3);
+    // Survive: 2 or 3 neighbors
+    rules[this.BITMASK_LENGTH] |= (1 << 2);
+    rules[this.BITMASK_LENGTH] |= (1 << 3);
+    rules[this.BITMASK_LENGTH * 2] = 1;
+    this.device.queue.writeBuffer(
+      this.rulesBuffer,
+      0,
+      rules
+    );
+
+    this.bNeighborhoodBuffer = this.device.createBuffer({
+      size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.updateNeighborhoodBuffer(0, 0);
+
+    this.sNeighborhoodBuffer = this.device.createBuffer({
+      size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.updateNeighborhoodBuffer(0, 1);
   }
 
   private createCameraBuffer() {
@@ -688,8 +842,8 @@ export class WebGPUService {
       size: (this.MAX_RULESETS + 1) * 16, // 4 * 4 byte floats r,g,b,a
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    this.updateColors(0, 0, 0, 0);
-    this.updateColors(128, 255, 255, 1);
+    this.updateColors(0, 0, 0, -1);
+    this.updateColors(128, 255, 255, 0);
   }
 
 }

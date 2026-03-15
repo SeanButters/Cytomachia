@@ -84,6 +84,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   private pauseLoop() {
       this.gpu.pause();
+      if(this.isPaused) console.log("unpaused");
+      else console.log("paused");
       this.isPaused = !this.isPaused;
   }
 
@@ -112,11 +114,11 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     }
     if (e.code === 'KeyC') {
       // TODO better implementation
-      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 1);
+      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
     }
     if (e.code === 'KeyB') {
       // TODO better implementation
-      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
+      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
     }
   };
 
