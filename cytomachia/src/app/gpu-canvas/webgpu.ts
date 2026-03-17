@@ -468,7 +468,7 @@ export class WebGPUService {
     return y * grid.width + x;
   }
 
-  fn getCell(x: i32, y: i32) -> u32 {
+  fn checkCell(x: i32, y: i32) -> bool {
     let w = i32(grid.width);
     let h = i32(grid.height);
 
@@ -478,12 +478,7 @@ export class WebGPUService {
 
     let cellValue = inputCells[index(u32(wrappedX), u32(wrappedY))];
 
-    if(cellValue == rules.value){
-      return cellValue;
-    }
-    else {
-      return 0u;
-    }
+    return (cellValue == rules.value);
   }
 
   fn checkBitmask(mask: array<u32,${this.BITMASK_LENGTH}>, value: u32) -> bool {
@@ -504,14 +499,16 @@ export class WebGPUService {
         if (weight != 0u) {
           let nx = x + i32(ox) - offset;
           let ny = y + i32(oy) - offset;
-          neighborCount += getCell(nx,ny) * weight;
+
+          if (checkCell(nx,ny)) {
+            neighborCount += weight;
+          }
         }
       }
     }
 
     return u32(f32(neighborCount) * neighborhood.scale);
   }
-
 
   // Compute shader
 
