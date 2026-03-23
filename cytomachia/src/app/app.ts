@@ -1,5 +1,5 @@
 import { Component, signal } from '@angular/core';
-import { GpuCanvasComponent } from './simulationControl/canvas-controller';
+import { GpuCanvasComponent } from './simulationControl/simulation-window';
 
 @Component({
   selector: 'app-root',

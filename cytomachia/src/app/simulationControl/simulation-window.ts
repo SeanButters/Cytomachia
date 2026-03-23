@@ -11,8 +11,8 @@ import { WebGPUService } from './gpu-service';
 @Component({
   selector: 'app-gpu-canvas',
   imports: [],
-  templateUrl: './canvas-controller.html',
-  styleUrl: './canvas-controller.scss',
+  templateUrl: './simulation-window.html',
+  styleUrl: './simulation-window.scss',
 })
 export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Injectable constructors
@@ -186,8 +186,9 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   // Resize canvas to same aspect ratio when window is resized
   private resizeCanvas() {
-    const width = Math.floor(this.canvas.clientWidth * this.dpr);
-    const height = Math.floor(this.canvas.clientHeight * this.dpr);
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.floor(rect.width * this.dpr);
+    const height = Math.floor(rect.height * this.dpr);
     if(this.canvas.width === width && this.canvas.height === height) {
       return;
     }

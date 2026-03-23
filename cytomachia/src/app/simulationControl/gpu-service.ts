@@ -24,7 +24,7 @@ export class WebGPUService {
   private gridParamsBuffer!: GPUBuffer;
   private stateBuffers: GPUBuffer[] = [];
   private pingpongIndex = 0;
-  private rulesBuffer!: GPUBuffer; //[] = []; //TODO
+  private rulesBuffer!: GPUBuffer; //[] = []; //TODO for multiple rulesets
   private bNeighborhoodBuffer!: GPUBuffer;
   private sNeighborhoodBuffer!: GPUBuffer;
   //private rulsetIndex = 0;
