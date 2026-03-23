@@ -1,3 +1,12 @@
-<div #container class="container">
+<div class="theater">
+  <div class="player">
     <canvas #canvas class="camera"></canvas>
+    <div class="theaterButtons">
+      <button 
+      matButton="Outline"
+      (click)="pauseLoop()">
+          <mat-icon [fontIcon]="isPaused ? 'play_arrow' : 'pause'"></mat-icon>
+      </button>
+    </div>
+  </div>
 </div>

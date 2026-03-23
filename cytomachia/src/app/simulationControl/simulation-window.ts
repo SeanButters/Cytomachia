@@ -5,12 +5,16 @@ import {
   AfterViewInit,
   OnDestroy,
   NgZone,
+  ChangeDetectorRef,
 } from '@angular/core';
+import { MatIconModule } from '@angular/material/icon'
 import { WebGPUService } from './gpu-service';
 
 @Component({
   selector: 'app-gpu-canvas',
-  imports: [],
+  imports: [
+    MatIconModule,
+  ],
   templateUrl: './simulation-window.html',
   styleUrl: './simulation-window.scss',
 })
@@ -18,14 +22,15 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Injectable constructors
   constructor(
     private gpu: WebGPUService,
-    private zone: NgZone
+    private zone: NgZone,
+    private changeDetector: ChangeDetectorRef,
   ) {}
 
   // Canvas element
   @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
   private canvas!: HTMLCanvasElement;
 
-  private isPaused = false;
+  public isPaused = false;
   private noiseGenerator = 'fractal'
 
   // Camera Controls
@@ -82,15 +87,15 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  private pauseLoop() {
+  public pauseLoop() {
       this.gpu.pause();
-      if(this.isPaused) console.log("unpaused");
-      else console.log("paused");
       this.isPaused = !this.isPaused;
+      this.changeDetector.detectChanges();
   }
 
   private handleKey = (e: KeyboardEvent) => {
     if (e.code === 'Space') {
+      e.preventDefault();
       this.pauseLoop();
     }
     if (e.code === 'KeyN') {
