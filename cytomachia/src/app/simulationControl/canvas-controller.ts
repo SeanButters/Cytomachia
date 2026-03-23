@@ -6,13 +6,13 @@ import {
   OnDestroy,
   NgZone,
 } from '@angular/core';
-import { WebGPUService } from './webgpu';
+import { WebGPUService } from './gpu-service';
 
 @Component({
   selector: 'app-gpu-canvas',
   imports: [],
-  templateUrl: './gpu-canvas.html',
-  styleUrl: './gpu-canvas.scss',
+  templateUrl: './canvas-controller.html',
+  styleUrl: './canvas-controller.scss',
 })
 export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Injectable constructors
@@ -21,18 +21,18 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     private zone: NgZone
   ) {}
 
+  // Canvas element
+  @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
+  private canvas!: HTMLCanvasElement;
+
   private isPaused = false;
   private noiseGenerator = 'fractal'
 
-  // Camera stuff
+  // Camera Controls
   private dpr!: number;
   private isDragging = false;
   private lastX = 0;
   private lastY = 0;
-
-  // Canvas element
-  @ViewChild('canvas', {static: true}) canvasRef!: ElementRef<HTMLCanvasElement>;
-  private canvas!: HTMLCanvasElement;
 
   // Maintain canvas aspect ratio vars
   private resizeObserver?: ResizeObserver;   // Resize observer to maintain canvas dimensions
