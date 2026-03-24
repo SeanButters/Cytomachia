@@ -8,13 +8,15 @@ import {
   ChangeDetectorRef,
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon'
+import { MatTooltipModule, MatTooltip } from '@angular/material/tooltip';
 import { WebGPUService } from './gpu-service';
 
 @Component({
   selector: 'app-gpu-canvas',
   imports: [
     MatIconModule,
-  ],
+    MatTooltip
+],
   templateUrl: './simulation-window.html',
   styleUrl: './simulation-window.scss',
 })
@@ -31,6 +33,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   private canvas!: HTMLCanvasElement;
 
   public isPaused = false;
+  public isCompact = false;
   private noiseGenerator = 'fractal'
 
   // Camera Controls
@@ -88,9 +91,20 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   public pauseLoop() {
-      this.gpu.pause();
-      this.isPaused = !this.isPaused;
-      this.changeDetector.detectChanges();
+    this.gpu.pause();
+    this.isPaused = !this.isPaused;
+    this.changeDetector.detectChanges();
+  }
+
+  public toggleCompactMode() {
+    this.isCompact = !this.isCompact;
+    this.changeDetector.detectChanges();
+    this.scheduleResize();
+  }
+
+  public stepOnce() {
+    if(!this.isPaused) this.pauseLoop();
+    this.gpu.stepOnce();
   }
 
   private handleKey = (e: KeyboardEvent) => {
@@ -99,6 +113,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
       this.pauseLoop();
     }
     if (e.code === 'KeyN') {
+      this.stepOnce();
       if(!this.isPaused) this.pauseLoop();
       this.gpu.stepOnce();
     }

@@ -1,12 +1,30 @@
-<div class="theater">
+<div class="theatre" [class.compact]="isCompact">
   <div class="player">
     <canvas #canvas class="camera"></canvas>
-    <div class="theaterButtons">
-      <button 
-      matButton="Outline"
-      (click)="pauseLoop()">
+    <div class="playerButtons">
+      <div class="buttonRow">
+        <button 
+          matButton
+          [matTooltip]="isPaused? 'Start/Resume simulation' : 'Pause simulation'"
+          (click)="pauseLoop()">
           <mat-icon [fontIcon]="isPaused ? 'play_arrow' : 'pause'"></mat-icon>
-      </button>
+        </button>
+
+        <button 
+          matButton
+          matTooltip="Step once"
+          (click)="stepOnce()">
+          <mat-icon fontIcon="skip_next"></mat-icon>
+        </button>
+      </div>
+      <div class="buttonRow">
+        <button 
+          matButton
+          [matTooltip]="isCompact? 'Expand View' : 'Compact View'"
+          (click)="toggleCompactMode()">
+          <mat-icon [fontIcon]="isCompact ? 'fullscreen' : 'fullscreen_exit'"></mat-icon>
+        </button>       
+      </div>
     </div>
   </div>
 </div>

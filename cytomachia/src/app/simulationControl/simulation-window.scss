@@ -1,21 +1,29 @@
-.theater {
+.theatre {
   display: flex;
   justify-content: center;
   align-content: center;
   max-width: 100%;
   height: auto;
-  padding-top: 5px;
   background-color: rgb(21, 21, 21);
+}
+
+.theatre.compact {
+  justify-content: center;
+  padding-top: 5px;
+
+  .player {
+    max-width: min(100%, calc((500px) * (16 / 9)));
+  }
 }
 
 .player {
   display: flex;
   flex-direction: column;
-  width: min(100%, calc((100vh - 40px) * (16 / 9)));;
+  width: min(100%, calc((100vh - 40px) * (16 / 9)));
 
   .camera {
     display: flex;
-    width: min(100%, calc((100vh - 40px) * (16 / 9)));
+    width: inherit;
     height: auto;
     aspect-ratio: 16/9;
     max-height: 100%;
@@ -26,12 +34,18 @@
   cursor: grabbing;
   }
 
-  .theaterButtons {
+  .playerButtons {
     display: flex;
-    width: 100%;
-    height: 40px;
+    width: calc(100% - 20px);
+    height: 35px;
     flex-direction: row;
-    justify-content: left;
+    justify-content: space-between;
     align-items: center;
+    padding: 0 10px;
+
+    .buttonRow {
+      display: flex;
+      gap: 20px;
+    }
   }
 }
