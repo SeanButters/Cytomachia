@@ -107,6 +107,27 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.gpu.stepOnce();
   }
 
+  public zoomInOut(mode: string) {
+    const rect = this.canvas.getBoundingClientRect();
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const zoomFactor = 1.25;
+    const zoomMultiplier = mode==='in' ? zoomFactor : 1 / zoomFactor;
+
+    this.zoomAtClientPoint(centerX, centerY, zoomMultiplier);
+  }
+
+  zoomAtClientPoint(clientX: number, clientY: number, zoomMultiplier: number) {
+    const rect = this.canvas.getBoundingClientRect();
+
+    const x = (clientX - rect.left) * this.dpr;
+    const y = this.canvas.height - ((clientY - rect.top) * this.dpr);
+
+    this.gpu.zoomAt(x, y, zoomMultiplier);
+  }
+
   private handleKey = (e: KeyboardEvent) => {
     if (e.code === 'Space') {
       e.preventDefault();
@@ -114,8 +135,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     }
     if (e.code === 'KeyN') {
       this.stepOnce();
-      if(!this.isPaused) this.pauseLoop();
-      this.gpu.stepOnce();
     }
     if (e.code === 'KeyR') {
       this.gpu.randomizeGrid(this.noiseGenerator);
@@ -145,16 +164,11 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   private onScroll = (e: WheelEvent) => {
     e.preventDefault();
 
-    const rect = this.canvas.getBoundingClientRect();
-
-    const mouseX = (e.clientX - rect.left) * this.dpr;
-    const mouseY = this.canvas.height - ((e.clientY - rect.top) * this.dpr);
-
     const zoomFactor = 1.1;
 
     const zoomMultiplier = e.deltaY < 0 ? zoomFactor : 1 / zoomFactor;
 
-    this.gpu.zoomAt(mouseX, mouseY, zoomMultiplier);
+    this.zoomAtClientPoint(e.clientX, e.clientY, zoomMultiplier)
   };
 
   private onMouseDown = (e: MouseEvent) => {

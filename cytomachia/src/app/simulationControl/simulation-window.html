@@ -20,6 +20,18 @@
       <div class="buttonRow">
         <button 
           matButton
+          matTooltip=""
+          (click)="zoomInOut('out')">
+          <mat-icon fontIcon="zoom_out"></mat-icon>
+        </button> 
+        <button 
+          matButton
+          matTooltip=""
+          (click)="zoomInOut('in')">
+          <mat-icon fontIcon="zoom_in"></mat-icon>
+        </button>
+        <button 
+          matButton
           [matTooltip]="isCompact? 'Expand View' : 'Compact View'"
           (click)="toggleCompactMode()">
           <mat-icon [fontIcon]="isCompact ? 'fullscreen' : 'fullscreen_exit'"></mat-icon>
