@@ -58,7 +58,9 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.dpr = window.devicePixelRatio || 1;
     this.resizeCanvas();
     this.initResizeObserver();
-    window.addEventListener('keydown', this.handleKey);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp)
     this.canvas.addEventListener('wheel', this.onScroll, { passive: false });
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
@@ -71,7 +73,9 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     // Remove any subscriptions on destroy
-    window.removeEventListener('keydown', this.handleKey);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp)
     this.canvas.removeEventListener('wheel', this.onScroll);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
@@ -107,19 +111,19 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.gpu.stepOnce();
   }
 
-  public zoomInOut(mode: string) {
+  public zoomInOut(isZoomIn: boolean) {
     const rect = this.canvas.getBoundingClientRect();
 
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
     const zoomFactor = 1.25;
-    const zoomMultiplier = mode==='in' ? zoomFactor : 1 / zoomFactor;
+    const zoomMultiplier = isZoomIn ? zoomFactor : 1 / zoomFactor;
 
     this.zoomAtClientPoint(centerX, centerY, zoomMultiplier);
   }
 
-  zoomAtClientPoint(clientX: number, clientY: number, zoomMultiplier: number) {
+  private zoomAtClientPoint(clientX: number, clientY: number, zoomMultiplier: number) {
     const rect = this.canvas.getBoundingClientRect();
 
     const x = (clientX - rect.left) * this.dpr;
@@ -128,7 +132,16 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.gpu.zoomAt(x, y, zoomMultiplier);
   }
 
-  private handleKey = (e: KeyboardEvent) => {
+  private onVisibilityChange = () => {
+    // Toggle pause when simulation not manually paused on visibility change
+    if(!this.isPaused) {
+      this.gpu.pause();
+    }
+
+    this.gpu.resetFrameData(); // prevent lag
+  }
+
+  private handleKeyDown = (e: KeyboardEvent) => {
     if (e.code === 'Space') {
       e.preventDefault();
       this.pauseLoop();
@@ -159,7 +172,34 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
       // TODO better implementation
       this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
     }
+    if (e.code === 'ArrowUp') {
+      this.gpu.directionsPressed[0] = true;
+    }
+    if (e.code === 'ArrowRight') {
+      this.gpu.directionsPressed[1] = true;
+    }
+    if (e.code === 'ArrowDown') {
+      this.gpu.directionsPressed[2] = true;
+    }
+        if (e.code === 'ArrowLeft') {
+      this.gpu.directionsPressed[3] = true;
+    }
   };
+
+  private handleKeyUp = (e: KeyboardEvent) => {
+    if (e.code === 'ArrowUp') {
+      this.gpu.directionsPressed[0] = false;
+    }
+    if (e.code === 'ArrowRight') {
+      this.gpu.directionsPressed[1] = false;
+    }
+    if (e.code === 'ArrowDown') {
+      this.gpu.directionsPressed[2] = false;
+    }
+    if (e.code === 'ArrowLeft') {
+      this.gpu.directionsPressed[3] = false;
+    }
+  }
 
   private onScroll = (e: WheelEvent) => {
     e.preventDefault();

@@ -9,7 +9,6 @@
           (click)="pauseLoop()">
           <mat-icon [fontIcon]="isPaused ? 'play_arrow' : 'pause'"></mat-icon>
         </button>
-
         <button 
           matButton
           matTooltip="Step once"
@@ -21,13 +20,13 @@
         <button 
           matButton
           matTooltip=""
-          (click)="zoomInOut('out')">
+          (click)="zoomInOut(false)">
           <mat-icon fontIcon="zoom_out"></mat-icon>
         </button> 
         <button 
           matButton
           matTooltip=""
-          (click)="zoomInOut('in')">
+          (click)="zoomInOut(true)">
           <mat-icon fontIcon="zoom_in"></mat-icon>
         </button>
         <button 

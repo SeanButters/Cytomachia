@@ -52,7 +52,9 @@ export class WebGPUService {
   private isRunning: boolean = false;
   private targetStepsPerSecond = 24; // Target FPS
   private lastFrameTime = 0;
-  private stepAccumulator = 0;
+  private computeStepAccumulator = 0;
+  private inputStepAccumulator = 0;
+  public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
 
   // Camera vars
   private cameraBuffer!: GPUBuffer;
@@ -175,6 +177,12 @@ export class WebGPUService {
     }
   }
 
+  public resetFrameData() {
+    this.lastFrameTime = performance.now();
+    this.computeStepAccumulator = 0;
+    this.inputStepAccumulator = 0;
+  }
+
   // Pan camera
   cameraMove(dx: number, dy: number) {
     this.cameraOffset.x -= dx / (this.cameraZoom * this.gridScaleFactor.x);
@@ -267,21 +275,27 @@ export class WebGPUService {
     const delta = (time - this.lastFrameTime) / 1000;
     this.lastFrameTime = time;
 
-    if (this.isRunning) {
-      const stepInterval = 1 / this.targetStepsPerSecond;
-      this.stepAccumulator += delta;
+    this.updateState(delta);
 
-      while (this.stepAccumulator >= stepInterval) {
-        this.computeStep();
-        this.stepAccumulator -= stepInterval;
-      }
-    }
+    this.handleInput(delta);
 
     this.renderFrame();
 
     // Loop
     requestAnimationFrame(this.frame);
   };
+
+  private updateState(delta: number) {
+    if (this.isRunning) {
+      const stepInterval = 1 / this.targetStepsPerSecond;
+      this.computeStepAccumulator += delta;
+
+      while (this.computeStepAccumulator >= stepInterval) {
+        this.computeStep();
+        this.computeStepAccumulator -= stepInterval;
+      }
+    }
+  }
 
   private computeStep() {
     const encoder = this.device.createCommandEncoder();
@@ -303,6 +317,48 @@ export class WebGPUService {
 
     // Flip index
     this.pingpongIndex ^= 1;
+  }
+
+  // Handle user input
+  private handleInput(delta: number) {
+
+    const stepInterval = 1 / 30 //30fps;
+    this.inputStepAccumulator += delta;
+    const speed = 15;
+
+    while (this.inputStepAccumulator >= stepInterval) {
+      this.inputStepAccumulator -= stepInterval;
+      this.handleDirectionInput();
+    } 
+  }
+
+  // Handle camera movment based on diretion input
+  private handleDirectionInput() {
+    const speed = 15;
+  
+    let dx = 0;
+    let dy = 0;
+
+    // directionsPressed: [up, right, down, left]
+    if (this.directionsPressed[0]) dy -= 1;
+    if (this.directionsPressed[1]) dx -= 1;
+    if (this.directionsPressed[2]) dy += 1;
+    if (this.directionsPressed[3]) dx += 1;
+
+    if(dx === 0 && dy === 0) {
+      return;
+    }
+
+    const length = Math.hypot(dx, dy);
+    if (length > 0) {
+      dx /= length;
+      dy /= length;
+    }
+
+    dx *= speed;
+    dy *= speed;
+
+    this.cameraMove(Math.floor(dx), Math.floor(dy));
   }
 
   private index(x: number, y: number, width: number ): number {
