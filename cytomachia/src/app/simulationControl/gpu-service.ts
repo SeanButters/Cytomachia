@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
-import { createNoise2D } from "simplex-noise";
+import { createNoise4D } from "simplex-noise";
+import { Observable, BehaviorSubject } from 'rxjs';
 
 interface orderedPair {
   x: number,
@@ -50,6 +51,8 @@ export class WebGPUService {
   // Simulation loop state vars
   private animationId: number | null = null;
   private isRunning: boolean = false;
+  private isLoading = new BehaviorSubject<boolean>(true);
+  public isLoadingObservable: Observable<boolean> = this.isLoading.asObservable();
   private targetStepsPerSecond = 24; // Target FPS
   private lastFrameTime = 0;
   private computeStepAccumulator = 0;
@@ -149,10 +152,10 @@ export class WebGPUService {
     this.renderParamsBindGroup = undefined as any;
   }
 
-  start() {
+  start(startPaused: boolean) {
     if (this.isRunning) return;
     this.lastFrameTime = performance.now();
-    this.isRunning = true;
+    this.isRunning = !startPaused;
 
     requestAnimationFrame(this.frame);
   }
@@ -239,6 +242,7 @@ export class WebGPUService {
 
   // Randomize gridstate of simulation
   async randomizeGrid(method: string) {
+    this.isLoading.next(true);
     // Pause simulation loop
     const wasRunning = this.isRunning;
     this.isRunning = false;
@@ -266,6 +270,7 @@ export class WebGPUService {
     this.pingpongIndex = 0;  // Reset ping-pong index
 
     this.isRunning = wasRunning;
+    this.isLoading.next(false);
   }
 
   ///
@@ -435,39 +440,65 @@ export class WebGPUService {
   }
 
   private simplexNoise (cells: Uint32Array) {
-    const noise = createNoise2D();
-    const scale = 0.05;
+    const noise = createNoise4D();
 
     for (let y = 0; y < this.gridSize.y; y++) {
       for (let x = 0; x < this.gridSize.x; x++) {
         const i = y * this.gridSize.x + x;
 
-        const n = noise(x * scale, y * scale);
+        const freq = 6;
+        const nx = (x / this.gridSize.x) * freq;
+        const ny = (y / this.gridSize.y) * freq;
+
+        // Map to torus
+        const angleX = nx * Math.PI * 2;
+        const angleY = ny * Math.PI * 2;
+
+        const nx_cos = Math.cos(angleX);
+        const nx_sin = Math.sin(angleX);
+        const ny_cos = Math.cos(angleY);
+        const ny_sin = Math.sin(angleY);
+
+        const n = noise(nx_cos, nx_sin, ny_cos, ny_sin);
+
         cells[i] = Math.floor((n + 1) * 0.5 * (this.MAX_RULESETS + 1));
       }
     }
   }
   
   private fractalNosie (cells: Uint32Array) {
-    const noise = createNoise2D();
+    const noise = createNoise4D();
 
     for (let y = 0; y < this.gridSize.y; y++) {
       for (let x = 0; x < this.gridSize.x; x++) {
-        const i = y * this.gridSize.x + x;
-
         let value = 0;
+        const i = y * this.gridSize.x + x;
         let amp = 1;
-        let freq = 0.02;
+        let freq = 4;
         const rounds = 4;
 
-        for (let i = 0; i < rounds; i++) {
-          value += noise(x * freq, y * freq) * amp;
+        for (let o = 0; o < rounds; o++) {
+          const nx = (x / this.gridSize.x) * freq;
+          const ny = (y / this.gridSize.y) * freq;
+          
+          // Map to torus
+          const angleX = nx * Math.PI * 2;
+          const angleY = ny * Math.PI * 2;
+
+          value += noise(
+            Math.cos(angleX),
+            Math.sin(angleX),
+            Math.cos(angleY),
+            Math.sin(angleY)
+          ) * amp;
+
           amp *= 0.5;
           freq *= 2;
         }
-        value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize
 
-        const n = Math.floor((value + 1) * 0.5 * (this.MAX_RULESETS + 1));
+        value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize 
+
+        const n = Math.floor((value + 1) * 0.5 * (this.MAX_RULESETS + 1)); 
         cells[i] = n;
       }
     }
@@ -729,22 +760,13 @@ export class WebGPUService {
     // Calculate camera zoom + pan
     let worldX = ((in.uv.x * f32width) / camera.zoom) + camera.offsetX;
     let worldY = ((in.uv.y * f32height) / camera.zoom) + camera.offsetY;
-
-    var x = 0u;    
-    if( worldX < 0) {
-      x = grid.width - u32(abs(worldX) % f32width);
-    }
-    else {
-      x = u32(worldX) % grid.width;
-    }
     
-    var y = 0u;
-    if( worldY < 0) {
-      y = grid.height - u32(abs(worldY) % f32height);
-    }
-    else {
-      y = u32(worldY) % grid.height;
-    }
+    // Calculate toroidal wrap
+    let wrappedX = worldX - floor(worldX / f32width) * f32width;
+    let wrappedY = worldY - floor(worldY / f32height) * f32height;
+
+    let x = u32(wrappedX);
+    let y = u32(wrappedY);
 
     let index = y * grid.width + x;
     let value = state[index];

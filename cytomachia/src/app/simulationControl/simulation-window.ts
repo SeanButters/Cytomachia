@@ -8,8 +8,9 @@ import {
   ChangeDetectorRef,
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon'
-import { MatTooltipModule, MatTooltip } from '@angular/material/tooltip';
+import { MatTooltip } from '@angular/material/tooltip';
 import { WebGPUService } from './gpu-service';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-gpu-canvas',
@@ -34,6 +35,9 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   public isPaused = false;
   public isCompact = false;
+  public isLoading = true;
+  private isLoadingSubscription!: Subscription;
+  public interactionMode = 'drag'
   private noiseGenerator = 'fractal'
 
   // Camera Controls
@@ -65,10 +69,14 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
+    this.isLoadingSubscription = this.gpu.isLoadingObservable.subscribe(value => {
+      console.log(value)
+      this.isLoading = value;
+      this.changeDetector.detectChanges();
+    });
     this.gpu.renderFrame();
 
-    // Start render compute loop
-    this.startGpuLoop();
+    this.startGpuLoop(document.visibilityState === 'hidden');
   }
 
   ngOnDestroy(): void {
@@ -81,6 +89,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     this.resizeObserver?.disconnect();
+    this.isLoadingSubscription.unsubscribe();
     this.gpu.destroy();
   }
 
@@ -88,9 +97,9 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   /// Component Methods
   ///
   // Start GPU loop
-  private startGpuLoop() {
+  private startGpuLoop(isHidden: boolean) {
     this.zone.runOutsideAngular(() => {
-      this.gpu.start();
+      this.gpu.start(isHidden);
     });
   }
 
@@ -104,6 +113,10 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.isCompact = !this.isCompact;
     this.changeDetector.detectChanges();
     this.scheduleResize();
+  }
+
+  public updateInteractionMode(newMode: string) {
+    this.interactionMode = newMode;
   }
 
   public stepOnce() {
@@ -142,6 +155,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
+    if(this.isLoading) return;
+
     if (e.code === 'Space') {
       e.preventDefault();
       this.pauseLoop();
@@ -187,6 +202,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
+    if(this.isLoading) return;
+
     if (e.code === 'ArrowUp') {
       this.gpu.directionsPressed[0] = false;
     }
@@ -202,6 +219,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private onScroll = (e: WheelEvent) => {
+    if(this.isLoading) return;
+
     e.preventDefault();
 
     const zoomFactor = 1.1;
@@ -212,6 +231,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   };
 
   private onMouseDown = (e: MouseEvent) => {
+    if(this.isLoading) return;
+    
     this.canvas.classList.add('clicked');
     this.isDragging = true;
     this.lastX = e.clientX;

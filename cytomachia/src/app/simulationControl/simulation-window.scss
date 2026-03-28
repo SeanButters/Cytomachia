@@ -46,6 +46,25 @@
     .buttonRow {
       display: flex;
       gap: 20px;
+
+      .mat-mdc-tooltip-trigger:disabled{
+        border-radius: 5px;
+        color: black !important;
+        border-color: black;
+      }
     }
+  }
+}
+
+.player.loading {
+  cursor: wait;
+  .camera {
+    cursor: wait;
+  }
+  .camera.clicked {
+    cursor: wait;
+  }
+  .mat-mdc-tooltip-trigger{
+    cursor: wait;
   }
 }
