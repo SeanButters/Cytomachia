@@ -446,18 +446,18 @@ export class WebGPUService {
       for (let x = 0; x < this.gridSize.x; x++) {
         const i = y * this.gridSize.x + x;
 
-        const freq = 6;
-        const nx = (x / this.gridSize.x) * freq;
-        const ny = (y / this.gridSize.y) * freq;
+        const scale = 4;
+        const nx = x / this.gridSize.x
+        const ny = y / this.gridSize.y;
 
         // Map to torus
         const angleX = nx * Math.PI * 2;
         const angleY = ny * Math.PI * 2;
 
-        const nx_cos = Math.cos(angleX);
-        const nx_sin = Math.sin(angleX);
-        const ny_cos = Math.cos(angleY);
-        const ny_sin = Math.sin(angleY);
+        const nx_cos = Math.cos(angleX) * scale;
+        const nx_sin = Math.sin(angleX) * scale;
+        const ny_cos = Math.cos(angleY) * scale;
+        const ny_sin = Math.sin(angleY) * scale;
 
         const n = noise(nx_cos, nx_sin, ny_cos, ny_sin);
 
@@ -474,26 +474,26 @@ export class WebGPUService {
         let value = 0;
         const i = y * this.gridSize.x + x;
         let amp = 1;
-        let freq = 4;
         const rounds = 4;
+        let scale = 2.5;
 
         for (let o = 0; o < rounds; o++) {
-          const nx = (x / this.gridSize.x) * freq;
-          const ny = (y / this.gridSize.y) * freq;
+          const nx = x / this.gridSize.x;
+          const ny = y / this.gridSize.y;
           
           // Map to torus
           const angleX = nx * Math.PI * 2;
           const angleY = ny * Math.PI * 2;
 
           value += noise(
-            Math.cos(angleX),
-            Math.sin(angleX),
-            Math.cos(angleY),
-            Math.sin(angleY)
+            Math.cos(angleX) * scale,
+            Math.sin(angleX) * scale,
+            Math.cos(angleY) * scale,
+            Math.sin(angleY) * scale
           ) * amp;
 
           amp *= 0.5;
-          freq *= 2;
+          scale  *= 2;
         }
 
         value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize 

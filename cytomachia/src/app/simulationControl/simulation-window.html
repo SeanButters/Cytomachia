@@ -2,7 +2,7 @@
   <div class="player" [class.loading]="isLoading">
     <canvas #canvas class="camera"></canvas>
     <div class="playerButtons">
-      <div class="buttonRow">
+      <!-- <div class="buttonRow">
         <button
           matButton
           matTooltip="Draw mode (NOT CURRENTLY IMPLEMENTED)"
@@ -19,7 +19,7 @@
           >
           <span class="material-symbols-outlined">drag_pan</span>
         </button>
-      </div>
+      </div> -->
       <div class="buttonRow">
         <button 
           matButton
@@ -34,6 +34,13 @@
           [disabled]="isLoading"
           (click)="stepOnce()">
           <mat-icon fontIcon="skip_next"></mat-icon>
+        </button>
+        <button 
+          matButton
+          matTooltip="Reseed simulation"
+          [disabled]="isLoading"
+          (click)="randomizeGrid()">
+          <mat-icon fontIcon="casino"></mat-icon>
         </button>
       </div>
       <div class="buttonRow">

@@ -124,6 +124,10 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.gpu.stepOnce();
   }
 
+  public randomizeGrid() {
+    this.gpu.randomizeGrid(this.noiseGenerator);
+  }
+
   public zoomInOut(isZoomIn: boolean) {
     const rect = this.canvas.getBoundingClientRect();
 
@@ -165,7 +169,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
       this.stepOnce();
     }
     if (e.code === 'KeyR') {
-      this.gpu.randomizeGrid(this.noiseGenerator);
+      this.randomizeGrid();
     }
     if (e.code === 'Digit1') {
       this.noiseGenerator = 'white noise';
@@ -232,7 +236,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   private onMouseDown = (e: MouseEvent) => {
     if(this.isLoading) return;
-    
+
     this.canvas.classList.add('clicked');
     this.isDragging = true;
     this.lastX = e.clientX;
@@ -245,7 +249,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   };
 
   private onMouseMove = (e: MouseEvent) => {
-    if (!this.isDragging) return;
+    if (!this.isDragging || this.isLoading ) return;
 
     const dx = (e.clientX - this.lastX) * this.dpr;
     const dy = (this.lastY - e.clientY) * this.dpr;
@@ -255,11 +259,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
     this.gpu.cameraMove(dx, dy);
   };
-
-  // TODO Helper method to sleep maybe not needed in future?
-  // sleep(ms: number) {
-  //   return new Promise(resolve => setTimeout(resolve, ms));
-  // }
 
   private initResizeObserver() {
     this.resizeObserver = new ResizeObserver(() => {
