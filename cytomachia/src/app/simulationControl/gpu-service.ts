@@ -180,7 +180,7 @@ export class WebGPUService {
     }
   }
 
-  public resetFrameData() {
+  resetFrameData() {
     this.lastFrameTime = performance.now();
     this.computeStepAccumulator = 0;
     this.inputStepAccumulator = 0;
@@ -254,7 +254,7 @@ export class WebGPUService {
     const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
 
     if (method === 'fractal') {
-      this.fractalNosie(newCells);
+      this.fractalNoise(newCells);
     }
     else if (method === 'simplex') {
       this.simplexNoise(newCells);
@@ -466,7 +466,7 @@ export class WebGPUService {
     }
   }
   
-  private fractalNosie (cells: Uint32Array) {
+  private fractalNoise (cells: Uint32Array) {
     const noise = createNoise4D();
 
     for (let y = 0; y < this.gridSize.y; y++) {
@@ -475,7 +475,7 @@ export class WebGPUService {
         const i = y * this.gridSize.x + x;
         let amp = 1;
         const rounds = 4;
-        let scale = 2.5;
+        let scale = 3;
 
         for (let o = 0; o < rounds; o++) {
           const nx = x / this.gridSize.x;
@@ -486,10 +486,10 @@ export class WebGPUService {
           const angleY = ny * Math.PI * 2;
 
           value += noise(
-            Math.cos(angleX) * scale,
-            Math.sin(angleX) * scale,
-            Math.cos(angleY) * scale,
-            Math.sin(angleY) * scale
+            Math.cos(angleX) * scale + 10,
+            Math.sin(angleX) * scale + 20,
+            Math.cos(angleY) * scale + 30,
+            Math.sin(angleY) * scale + 40
           ) * amp;
 
           amp *= 0.5;

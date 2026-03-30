@@ -10,13 +10,15 @@ import {
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltip } from '@angular/material/tooltip';
 import { WebGPUService } from './gpu-service';
+import { ConfigurationHandler } from './configuration-handler/configuration-handler';
 import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-gpu-canvas',
   imports: [
     MatIconModule,
-    MatTooltip
+    MatTooltip,
+    ConfigurationHandler
 ],
   templateUrl: './simulation-window.html',
   styleUrl: './simulation-window.scss',
@@ -34,7 +36,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   private canvas!: HTMLCanvasElement;
 
   public isPaused = false;
-  public isCompact = false;
+  public isCompact = true;
   public isLoading = true;
   private isLoadingSubscription!: Subscription;
   public interactionMode = 'drag'
