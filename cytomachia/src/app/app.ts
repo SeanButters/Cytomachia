@@ -1,9 +1,13 @@
 import { Component, signal } from '@angular/core';
-import { GpuCanvasComponent } from './simulationControl/simulation-window';
+import { GpuCanvasComponent } from './simulationControl/simulationWindow/simulation-window';
+import { ConfigurationHandler } from './simulationControl/configuration-handler/configuration-handler';
 
 @Component({
   selector: 'app-root',
-  imports: [GpuCanvasComponent],
+  imports: [
+    GpuCanvasComponent,
+    ConfigurationHandler
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })

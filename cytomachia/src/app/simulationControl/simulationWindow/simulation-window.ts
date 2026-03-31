@@ -9,8 +9,7 @@ import {
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltip } from '@angular/material/tooltip';
-import { WebGPUService } from './gpu-service';
-import { ConfigurationHandler } from './configuration-handler/configuration-handler';
+import { SimulationService } from '../simulation-service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -18,7 +17,6 @@ import { Subscription } from 'rxjs';
   imports: [
     MatIconModule,
     MatTooltip,
-    ConfigurationHandler
 ],
   templateUrl: './simulation-window.html',
   styleUrl: './simulation-window.scss',
@@ -26,7 +24,7 @@ import { Subscription } from 'rxjs';
 export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Injectable constructors
   constructor(
-    private gpu: WebGPUService,
+    private simulation: SimulationService,
     private zone: NgZone,
     private changeDetector: ChangeDetectorRef,
   ) {}
@@ -40,7 +38,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   public isLoading = true;
   private isLoadingSubscription!: Subscription;
   public interactionMode = 'drag'
-  private noiseGenerator = 'fractal'
 
   // Camera Controls
   private dpr!: number;
@@ -58,7 +55,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   async ngAfterViewInit() {
     // Wait until canvas is in DOM to initialize GPU
     this.canvas = this.canvasRef.nativeElement;
-    await this.gpu.init(this.canvas);
+    await this.simulation.init(this.canvas);
 
     // Setup canvas
     this.dpr = window.devicePixelRatio || 1;
@@ -71,12 +68,12 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
-    this.isLoadingSubscription = this.gpu.isLoadingObservable.subscribe(value => {
+    this.isLoadingSubscription = this.simulation.isLoading$.subscribe(value => {
       console.log(value)
       this.isLoading = value;
       this.changeDetector.detectChanges();
     });
-    this.gpu.renderFrame();
+    this.simulation.renderFrame();
 
     this.startGpuLoop(document.visibilityState === 'hidden');
   }
@@ -92,7 +89,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     window.removeEventListener('mousemove', this.onMouseMove);
     this.resizeObserver?.disconnect();
     this.isLoadingSubscription.unsubscribe();
-    this.gpu.destroy();
+    this.simulation.destroy();
   }
 
   ///
@@ -101,12 +98,12 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   // Start GPU loop
   private startGpuLoop(isHidden: boolean) {
     this.zone.runOutsideAngular(() => {
-      this.gpu.start(isHidden);
+      this.simulation.start(isHidden);
     });
   }
 
   public pauseLoop() {
-    this.gpu.pause();
+    this.simulation.pause();
     this.isPaused = !this.isPaused;
     this.changeDetector.detectChanges();
   }
@@ -123,11 +120,11 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   public stepOnce() {
     if(!this.isPaused) this.pauseLoop();
-    this.gpu.stepOnce();
+    this.simulation.stepOnce();
   }
 
   public randomizeGrid() {
-    this.gpu.randomizeGrid(this.noiseGenerator);
+    this.simulation.randomizeGrid();
   }
 
   public zoomInOut(isZoomIn: boolean) {
@@ -148,16 +145,16 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     const x = (clientX - rect.left) * this.dpr;
     const y = this.canvas.height - ((clientY - rect.top) * this.dpr);
 
-    this.gpu.zoomAt(x, y, zoomMultiplier);
+    this.simulation.zoomAt(x, y, zoomMultiplier);
   }
 
   private onVisibilityChange = () => {
     // Toggle pause when simulation not manually paused on visibility change
     if(!this.isPaused) {
-      this.gpu.pause();
+      this.simulation.pause();
     }
 
-    this.gpu.resetFrameData(); // prevent lag
+    this.simulation.resetFrameData(); // prevent lag
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
@@ -173,37 +170,29 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     if (e.code === 'KeyR') {
       this.randomizeGrid();
     }
-    if (e.code === 'Digit1') {
-      this.noiseGenerator = 'white noise';
-      console.log("Using white noise generator");
-    }
-    if (e.code === 'Digit2') {
-      this.noiseGenerator = 'simplex';
-      console.log("Using simplex noise generator");
-    }
-    if (e.code === 'Digit3') {
-      this.noiseGenerator = 'fractal';
-      console.log("Using fractal noise generator");
-    }
     if (e.code === 'KeyC') {
       // TODO better implementation
-      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
+      this.simulation.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
     }
     if (e.code === 'KeyB') {
       // TODO better implementation
-      this.gpu.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
+      this.simulation.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
     }
     if (e.code === 'ArrowUp') {
-      this.gpu.directionsPressed[0] = true;
+      e.preventDefault();
+      this.simulation.directionsPressed[0] = true;
     }
     if (e.code === 'ArrowRight') {
-      this.gpu.directionsPressed[1] = true;
+      e.preventDefault();
+      this.simulation.directionsPressed[1] = true;
     }
     if (e.code === 'ArrowDown') {
-      this.gpu.directionsPressed[2] = true;
+      e.preventDefault();
+      this.simulation.directionsPressed[2] = true;
     }
-        if (e.code === 'ArrowLeft') {
-      this.gpu.directionsPressed[3] = true;
+    if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      this.simulation.directionsPressed[3] = true;
     }
   };
 
@@ -211,16 +200,16 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     if(this.isLoading) return;
 
     if (e.code === 'ArrowUp') {
-      this.gpu.directionsPressed[0] = false;
+      this.simulation.directionsPressed[0] = false;
     }
     if (e.code === 'ArrowRight') {
-      this.gpu.directionsPressed[1] = false;
+      this.simulation.directionsPressed[1] = false;
     }
     if (e.code === 'ArrowDown') {
-      this.gpu.directionsPressed[2] = false;
+      this.simulation.directionsPressed[2] = false;
     }
     if (e.code === 'ArrowLeft') {
-      this.gpu.directionsPressed[3] = false;
+      this.simulation.directionsPressed[3] = false;
     }
   }
 
@@ -259,7 +248,7 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
 
-    this.gpu.cameraMove(dx, dy);
+    this.simulation.cameraMove(dx, dy);
   };
 
   private initResizeObserver() {
@@ -292,8 +281,8 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    this.gpu.resizeCanvas(width, height);
-    this.gpu.renderFrame();
+    this.simulation.resizeCanvas(width, height);
+    this.simulation.renderFrame();
   }
 
 

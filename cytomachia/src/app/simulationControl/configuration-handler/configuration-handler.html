@@ -1,5 +1,25 @@
+@if (isSimulation) {
 <div class="page">
-    <div class="configContainer">
-        hello!
+  <div class="configContainer">
+    <div class="configOption">
+      <span class="configTitle">Noise Generator</span>
+      <mat-radio-group 
+      (change)="updateNoiseGenerator($event.value)"
+      [formControl]="noiseGeneratorControl">
+        <mat-radio-button value="white noise">White noise</mat-radio-button>
+        <mat-radio-button value="simplex">Simplex</mat-radio-button>
+        <mat-radio-button value="fractal">Fractal</mat-radio-button>
+      </mat-radio-group>
     </div>
+    <div class="configOption">
+      <span class="configTitle">Maximum Frame Rate</span>
+      <mat-slider
+        min="1"
+        max="244"
+        step="1">
+        <input matSliderThumb [formControl]="fpsControl" (change)="updateTargetFPS(+fpsControl.value!)">
+      </mat-slider>
+    </div>
+  </div>
 </div>
+}

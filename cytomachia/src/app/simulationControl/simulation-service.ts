@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { createNoise4D } from "simplex-noise";
-import { Observable, BehaviorSubject } from 'rxjs';
+import { Observable, BehaviorSubject, ReplaySubject  } from 'rxjs';
 
 interface orderedPair {
   x: number,
@@ -10,7 +10,7 @@ interface orderedPair {
 @Injectable({
   providedIn: 'root',
 })
-export class WebGPUService {
+export class SimulationService {
 
   ///
   /// Vars
@@ -42,6 +42,7 @@ export class WebGPUService {
   private renderParamsBindGroup!: GPUBindGroup;
 
   // Simulation constraints
+  private noiseGenerator = 'fractal'
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
   private gridSize: orderedPair = { x: 2560, y: 1444 };
   private MAX_RULESETS = 1;
@@ -49,13 +50,15 @@ export class WebGPUService {
   private BITMASK_LENGTH = Math.ceil(((this.MAX_NEIGHBORHOOD_SIZE ** 2) - 1) / 32);
 
   // Simulation loop state vars
+  private isInit = new ReplaySubject<boolean>(1);
+  public isInit$: Observable<boolean> = this.isInit.asObservable();
   private animationId: number | null = null;
   private isRunning: boolean = false;
   private isLoading = new BehaviorSubject<boolean>(true);
-  public isLoadingObservable: Observable<boolean> = this.isLoading.asObservable();
-  private targetStepsPerSecond = 24; // Target FPS
-  private lastFrameTime = 0;
-  private computeStepAccumulator = 0;
+  public isLoading$: Observable<boolean> = this.isLoading.asObservable();
+  private targetStepTime = 1000 / 24; // Target FPS
+  private lastComputeTime = 0;
+  private lastInputTime = 0;
   private inputStepAccumulator = 0;
   public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
 
@@ -102,12 +105,14 @@ export class WebGPUService {
     this.createBuffers();
 
     // Compute pipline init
-    await this.randomizeGrid('fractal');
+    await this.randomizeGrid();
     this.createComputePipeline();
     this.createComputeBindGroups();
     // Render pipeline init
     this.createRenderPipeline();
     this.createRenderBindGroup();
+
+    this.isInit.next(true);
   }
 
   // Call when freeing this service
@@ -154,7 +159,7 @@ export class WebGPUService {
 
   start(startPaused: boolean) {
     if (this.isRunning) return;
-    this.lastFrameTime = performance.now();
+    this.resetFrameData();
     this.isRunning = !startPaused;
 
     requestAnimationFrame(this.frame);
@@ -180,9 +185,14 @@ export class WebGPUService {
     }
   }
 
+  updateTargetFPS(value: number){
+    this.targetStepTime = 1000 / value;
+    this.resetFrameData();
+  }
+
   resetFrameData() {
-    this.lastFrameTime = performance.now();
-    this.computeStepAccumulator = 0;
+    this.lastComputeTime = performance.now();
+    this.lastInputTime = performance.now();
     this.inputStepAccumulator = 0;
   }
 
@@ -240,8 +250,12 @@ export class WebGPUService {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  public updateNoiseGenerator(generator: string){
+    this.noiseGenerator = generator;
+  }
+
   // Randomize gridstate of simulation
-  async randomizeGrid(method: string) {
+  async randomizeGrid() {
     this.isLoading.next(true);
     // Pause simulation loop
     const wasRunning = this.isRunning;
@@ -253,10 +267,10 @@ export class WebGPUService {
     // Randomize array
     const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
 
-    if (method === 'fractal') {
+    if (this.noiseGenerator === 'fractal') {
       this.fractalNoise(newCells);
     }
-    else if (method === 'simplex') {
+    else if (this.noiseGenerator === 'simplex') {
       this.simplexNoise(newCells);
     }
     else {
@@ -277,12 +291,9 @@ export class WebGPUService {
   /// Private Service methods
   ///
   private frame = (time: number) => {
-    const delta = (time - this.lastFrameTime) / 1000;
-    this.lastFrameTime = time;
+    this.updateState(time);
 
-    this.updateState(delta);
-
-    this.handleInput(delta);
+    this.handleInput(time);
 
     this.renderFrame();
 
@@ -290,14 +301,11 @@ export class WebGPUService {
     requestAnimationFrame(this.frame);
   };
 
-  private updateState(delta: number) {
+  private updateState(time: number) {
     if (this.isRunning) {
-      const stepInterval = 1 / this.targetStepsPerSecond;
-      this.computeStepAccumulator += delta;
-
-      while (this.computeStepAccumulator >= stepInterval) {
+      if (time - this.lastComputeTime >= this.targetStepTime){
         this.computeStep();
-        this.computeStepAccumulator -= stepInterval;
+        this.lastComputeTime = time;
       }
     }
   }
@@ -325,16 +333,17 @@ export class WebGPUService {
   }
 
   // Handle user input
-  private handleInput(delta: number) {
-
-    const stepInterval = 1 / 30 //30fps;
+  private handleInput(time: number) {
+    const delta = time - this.lastInputTime;
+    const stepInterval = 1000 / 30;
     this.inputStepAccumulator += delta;
-    const speed = 15;
 
     while (this.inputStepAccumulator >= stepInterval) {
-      this.inputStepAccumulator -= stepInterval;
       this.handleDirectionInput();
-    } 
+      this.inputStepAccumulator -= stepInterval;
+    }
+
+    this.lastInputTime = time;
   }
 
   // Handle camera movment based on diretion input
