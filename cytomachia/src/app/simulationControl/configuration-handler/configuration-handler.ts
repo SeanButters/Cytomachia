@@ -1,15 +1,18 @@
 import { 
   Component,
   AfterViewInit,
-  ChangeDetectorRef
+  ChangeDetectorRef,
+  ViewChild,
+  ElementRef
 } from '@angular/core';
 import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule, MatInput } from '@angular/material/input'; 
+import { MatInput } from '@angular/material/input'; 
 import { MatRadioModule} from '@angular/material/radio';
 import { MatSliderModule } from '@angular/material/slider'
 import { SimulationService } from '../simulation-service';
 import { filter, take } from 'rxjs/operators';
+import iro from '@jaames/iro';
 
 @Component({
   selector: 'app-configuration-handler',
@@ -28,6 +31,9 @@ export class ConfigurationHandler {
     private simulation: SimulationService,
     private changeDetector: ChangeDetectorRef,
   ) {}
+
+  @ViewChild('backgroundColorPicker', { static: false }) backgroundColorPickerRef!: ElementRef<HTMLElement>;
+  private backgroundColorPicker! : HTMLElement;
 
   public isSimulation: boolean = false;
   public noiseGeneratorControl = new FormControl('fractal', [
@@ -52,6 +58,13 @@ export class ConfigurationHandler {
     this.isSimulation = true;
     this.changeDetector.detectChanges();
 
+    this.backgroundColorPicker = this.backgroundColorPickerRef.nativeElement;
+    var colorPicker = iro.ColorPicker(this.backgroundColorPicker, {
+        // Set the size of the color picker
+        width: 320,
+        // Set the initial color to pure red
+        color: "#f00"
+    });
   }
 
   public updateNoiseGenerator(generator: string) {
