@@ -13,6 +13,12 @@
   border-radius: 5px;
   padding: 10px;
 
+  .containerTitle {
+    display: flex; 
+    justify-content: center;
+    font-weight: bold;
+  }
+
   .configOption {
     justify-content: center;
     display: flex;
@@ -20,7 +26,7 @@
 
     .configTitle {
       display: flex; 
-      justify-content: center
+      justify-content: center;
     }
   }
 }

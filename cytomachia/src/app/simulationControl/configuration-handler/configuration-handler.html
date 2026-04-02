@@ -1,6 +1,7 @@
 @if (isSimulation) {
 <div class="page">
   <div class="configContainer">
+    <span class="containerTitle">Simulation Configurations</span>
     <div class="configOption">
       <span class="configTitle">Noise Generator</span>
       <mat-radio-group 
@@ -14,11 +15,22 @@
     <div class="configOption">
       <span class="configTitle">Maximum Frame Rate</span>
       <mat-slider
-        min="1"
+        min="8"
         max="244"
-        step="1">
+        step="8">
         <input matSliderThumb [formControl]="fpsControl" (change)="updateTargetFPS(+fpsControl.value!)">
       </mat-slider>
+    </div>
+    <div class="configOption">
+      <span class="configTitle">Background Color</span>
+      <input type="color">
+    </div>
+  </div>
+  <div class="configContainer">
+    <span class="containerTitle">Ruleset Configurations</span>
+    <div class="configOption">
+      <span class="configTitle">Noise Generator</span>
+      
     </div>
   </div>
 </div>
