@@ -1,18 +1,22 @@
 import { 
   Component,
   AfterViewInit,
+  OnDestroy,
   ChangeDetectorRef,
   ViewChild,
   ElementRef
 } from '@angular/core';
 import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInput } from '@angular/material/input'; 
+import { MatIconModule } from '@angular/material/icon';
 import { MatRadioModule} from '@angular/material/radio';
 import { MatSliderModule } from '@angular/material/slider'
 import { SimulationService } from '../simulation-service';
-import { filter, take } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, filter, take } from 'rxjs/operators';
 import iro from '@jaames/iro';
+import { IroColorPicker } from '@jaames/iro/dist/ColorPicker';
+import { IroColor } from '@irojs/iro-core/dist/color'
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-configuration-handler',
@@ -21,25 +25,39 @@ import iro from '@jaames/iro';
     ReactiveFormsModule,
     MatSliderModule,
     MatFormFieldModule,
-    MatInput
+    MatIconModule,
 ],
   templateUrl: './configuration-handler.html',
   styleUrl: './configuration-handler.scss',
 })
-export class ConfigurationHandler {
+export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   constructor(
     private simulation: SimulationService,
     private changeDetector: ChangeDetectorRef,
   ) {}
 
   @ViewChild('backgroundColorPicker', { static: false }) backgroundColorPickerRef!: ElementRef<HTMLElement>;
-  private backgroundColorPicker! : HTMLElement;
+  private backgroundColorPickerElement!: HTMLElement;
+  private backgroundColorPicker!: IroColorPicker;
+  public backgroundColorControl = new FormControl('#000000', [
+    Validators.required,
+    Validators.pattern(/^#([0-9A-F]{3}){1,2}$/i),
+  ]);
+  @ViewChild('foregroundColorPicker', { static: false }) foregroundColorPickerRef!: ElementRef<HTMLElement>;
+  private foregroundColorPickerElement!: HTMLElement;
+  private foregroundColorPicker!: IroColorPicker;
+  public foregroundColorControl = new FormControl('#7fffff', [
+    Validators.required,
+    Validators.pattern(/^#([0-9A-F]{3}){1,2}$/i),
+  ]);
+
+  private masterSubscription: Subscription[] = [];
 
   public isSimulation: boolean = false;
   public noiseGeneratorControl = new FormControl('fractal', [
     Validators.required
   ]);
-  public fpsControl = new FormControl('24', [
+  public fpsControl = new FormControl(24, [
     Validators.required,
     Validators.min(0),
     Validators.max(244)
@@ -50,21 +68,100 @@ export class ConfigurationHandler {
       filter(value => value === true),
       take(1)
     ).subscribe(() => {
-      this.init();
+      this.isSimulation = true;
+      this.changeDetector.detectChanges();
+      // Wait for DOM update
+      setTimeout(() => {
+        this.init();
+      });
+    });
+  }
+
+  ngOnDestroy() {
+    this.backgroundColorPicker!.off('input:end', this.updateBackgroundColor);
+    this.foregroundColorPicker!.off('input:end', this.updateForegroundColor);
+    this.masterSubscription.forEach(subsciption => {
+      subsciption.unsubscribe();
     });
   }
 
   private init() {
-    this.isSimulation = true;
-    this.changeDetector.detectChanges();
-
-    this.backgroundColorPicker = this.backgroundColorPickerRef.nativeElement;
-    var colorPicker = iro.ColorPicker(this.backgroundColorPicker, {
-        // Set the size of the color picker
-        width: 320,
-        // Set the initial color to pure red
-        color: "#f00"
+    // Setup color pickers
+    this.backgroundColorPickerElement = this.backgroundColorPickerRef.nativeElement;
+    this.backgroundColorPicker = iro.ColorPicker(this.backgroundColorPickerElement, {
+        width: 250,
+        color: "#000000"
     });
+    this.backgroundColorPicker.on('input:end', this.updateBackgroundColor);
+
+    this.foregroundColorPickerElement = this.foregroundColorPickerRef.nativeElement;
+    this.foregroundColorPicker = iro.ColorPicker(this.foregroundColorPickerElement, {
+        width: 250,
+        color: "#7FFFFF"
+    });
+    this.foregroundColorPicker.on('input:end', this.updateForegroundColor);
+
+    // Color picker formcontrols
+    this.masterSubscription.push(this.foregroundColorControl.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe(value => {
+      this.updateColorsFromHex(value!, 0);
+    }));
+    this.masterSubscription.push(this.backgroundColorControl.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe(value => {
+      this.updateColorsFromHex(value!, -1);
+    }));
+  }
+
+  private updateBackgroundColor = (color: IroColor) => {
+    const rgb = color.rgb;
+    this.simulation.updateColors(rgb.r, rgb.g, rgb.b, -1);
+  }
+
+  private updateForegroundColor = (color: IroColor) => {
+    const rgb = color.rgb;
+    this.simulation.updateColors(rgb.r, rgb.g, rgb.b, 0);
+    this.foregroundColorControl.setValue(color.hexString)
+  }
+
+  private updateColorsFromHex(hex: string, index: number) {
+    if (!hex || !/^#([0-9A-F]{3}){1,2}$/i.test(hex)) return;
+
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+
+    this.simulation.updateColors(r, g, b, index);
+    if (index === -1) {
+      this.backgroundColorPicker.color.hexString = hex;
+    }
+    else {
+      this.foregroundColorPicker.color.hexString = hex;
+    }
+  }
+
+  public randomizeBackgroundColor() {
+    let r = Math.floor(Math.random() * 256);
+    let g = Math.floor(Math.random() * 256);
+    let b = Math.floor(Math.random() * 256);
+    // Updating formcontrol will update simulation and color picker
+    this.backgroundColorControl.setValue(this.rgbToHex(r, g, b));
+  }
+
+  public randomizeForegroundColor() {
+    let r = Math.floor(Math.random() * 256);
+    let g = Math.floor(Math.random() * 256);
+    let b = Math.floor(Math.random() * 256);
+    // Updating formcontrol will update simulation and color picker
+    this.foregroundColorControl.setValue(this.rgbToHex(r, g, b));
+  }
+
+  private rgbToHex(r: number, g: number, b: number) {
+    const toHex = (c:number) => c.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
   public updateNoiseGenerator(generator: string) {

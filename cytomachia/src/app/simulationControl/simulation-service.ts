@@ -432,7 +432,6 @@ export class SimulationService {
       Math.max(0.0, Math.min(b / 255.0, 1.0)),
       1.0
     ]);
-    console.log(r, g, b);
 
     this.device.queue.writeBuffer(
       this.colorBuffer,
