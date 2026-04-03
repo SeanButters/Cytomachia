@@ -106,24 +106,23 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
-      this.updateColorsFromHex(value!, 0);
+      this.updateColorsFromHex(value!, 1);
     }));
     this.masterSubscription.push(this.backgroundColorControl.valueChanges.pipe(
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
-      this.updateColorsFromHex(value!, -1);
+      this.updateColorsFromHex(value!, 0);
     }));
   }
 
   private updateBackgroundColor = (color: IroColor) => {
     const rgb = color.rgb;
-    this.simulation.updateColors(rgb.r, rgb.g, rgb.b, -1);
+    this.backgroundColorControl.setValue(color.hexString)
   }
 
   private updateForegroundColor = (color: IroColor) => {
     const rgb = color.rgb;
-    this.simulation.updateColors(rgb.r, rgb.g, rgb.b, 0);
     this.foregroundColorControl.setValue(color.hexString)
   }
 
@@ -135,7 +134,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     const b = parseInt(hex.slice(5, 7), 16);
 
     this.simulation.updateColors(r, g, b, index);
-    if (index === -1) {
+    if (index === 0) {
       this.backgroundColorPicker.color.hexString = hex;
     }
     else {

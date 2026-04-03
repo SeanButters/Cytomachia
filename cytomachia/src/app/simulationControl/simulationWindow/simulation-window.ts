@@ -170,14 +170,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     if (e.code === 'KeyR') {
       this.randomizeGrid();
     }
-    if (e.code === 'KeyC') {
-      // TODO better implementation
-      this.simulation.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 0);
-    }
-    if (e.code === 'KeyB') {
-      // TODO better implementation
-      this.simulation.updateColors(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), -1);
-    }
     if (e.code === 'ArrowUp') {
       e.preventDefault();
       this.simulation.directionsPressed[0] = true;

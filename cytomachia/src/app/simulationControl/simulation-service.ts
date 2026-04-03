@@ -61,6 +61,7 @@ export class SimulationService {
   private lastInputTime = 0;
   private inputStepAccumulator = 0;
   public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
+  private pendingColors: Array<Float32Array<ArrayBuffer> | null> = [null, null]; // Buffer color inputs
 
   // Camera vars
   private cameraBuffer!: GPUBuffer;
@@ -340,6 +341,8 @@ export class SimulationService {
 
     while (this.inputStepAccumulator >= stepInterval) {
       this.handleDirectionInput();
+      this.handleColorInput();
+
       this.inputStepAccumulator -= stepInterval;
     }
 
@@ -373,6 +376,21 @@ export class SimulationService {
     dy *= speed;
 
     this.cameraMove(Math.floor(dx), Math.floor(dy));
+  }
+
+  private handleColorInput() {
+    for (let i = 0; i < this.pendingColors.length; i++) {
+      const color = this.pendingColors[i];
+      if(color != null) {
+        this.device.queue.writeBuffer(
+          this.colorBuffer,
+          i * 16, // 4 values * 4 bytes
+          color
+        );
+
+        this.pendingColors[i] = null;
+      }
+    }
   }
 
   private index(x: number, y: number, width: number ): number {
@@ -433,11 +451,7 @@ export class SimulationService {
       1.0
     ]);
 
-    this.device.queue.writeBuffer(
-      this.colorBuffer,
-      (index + 1) * 16, // 4 values * 4 bytes
-      colorData
-    );
+    this.pendingColors[index] = colorData;
   }
 
   private whiteNoise (cells: Uint32Array) {
@@ -925,8 +939,8 @@ export class SimulationService {
       size: (this.MAX_RULESETS + 1) * 16, // 4 * 4 byte floats r,g,b,a
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    this.updateColors(0, 0, 0, -1);
-    this.updateColors(128, 255, 255, 0);
+    this.updateColors(0, 0, 0, 0);
+    this.updateColors(128, 255, 255, 1);
   }
 
 }
