@@ -60,8 +60,11 @@ export class SimulationService {
   private lastComputeTime = 0;
   private lastInputTime = 0;
   private inputStepAccumulator = 0;
+
+  // Input buffers
   public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
   private pendingColors: Array<Float32Array<ArrayBuffer> | null> = [null, null]; // Buffer color inputs
+  private pendingRuleMasks: Array<Uint32Array<ArrayBuffer> | null> = [null, null];
 
   // Camera vars
   private cameraBuffer!: GPUBuffer;
@@ -189,6 +192,32 @@ export class SimulationService {
   updateTargetFPS(value: number){
     this.targetStepTime = 1000 / value;
     this.resetFrameData();
+  }
+
+  updateColors(r: number, g: number, b: number, index: number) {
+    // Convert from 256 base values to 0->1.0 floats
+    const colorData = new Float32Array([
+      Math.max(0.0, Math.min(r / 255.0, 1.0)),
+      Math.max(0.0, Math.min(g / 255.0, 1.0)),
+      Math.max(0.0, Math.min(b / 255.0, 1.0)),
+      1.0
+    ]);
+
+    this.pendingColors[index] = colorData;
+  }
+
+  updateRuleMasks(ruleArrayMask: boolean[], rule: number){
+    const ruleMask = new Uint32Array(this.BITMASK_LENGTH);
+    for (let i = 0; i < ruleArrayMask.length; i++) {
+      if(ruleArrayMask[i]) this.setBit(ruleMask, i);
+    }
+    this.pendingRuleMasks[rule] = ruleMask;
+  }
+
+  private setBit(mask: Uint32Array, n: number) {
+    const word = Math.floor(n / 32);
+    const bit = n % 32;
+    mask[word] |= 1 << bit;
   }
 
   resetFrameData() {
@@ -342,11 +371,27 @@ export class SimulationService {
     while (this.inputStepAccumulator >= stepInterval) {
       this.handleDirectionInput();
       this.handleColorInput();
+      this.handleMaskInput();
 
       this.inputStepAccumulator -= stepInterval;
     }
 
     this.lastInputTime = time;
+  }
+
+  private handleMaskInput() {
+    for (let i = 0; i < this.pendingRuleMasks.length; i++) {
+      const ruleMask = this.pendingRuleMasks[i];
+      if(ruleMask != null) {
+        this.device.queue.writeBuffer(
+          this.rulesBuffer,
+          i * this.BITMASK_LENGTH * 4,
+          ruleMask
+        );
+
+        this.pendingRuleMasks[i] = null;
+      }
+    }
   }
 
   // Handle camera movment based on diretion input
@@ -440,18 +485,6 @@ export class SimulationService {
       0,
       cameraData
     );
-  }
-
-  public updateColors(r: number, g: number, b: number, index: number) {
-    // Convert from 256 base values to 0->1.0 floats
-    const colorData = new Float32Array([
-      Math.max(0.0, Math.min(r / 255.0, 1.0)),
-      Math.max(0.0, Math.min(g / 255.0, 1.0)),
-      Math.max(0.0, Math.min(b / 255.0, 1.0)),
-      1.0
-    ]);
-
-    this.pendingColors[index] = colorData;
   }
 
   private whiteNoise (cells: Uint32Array) {

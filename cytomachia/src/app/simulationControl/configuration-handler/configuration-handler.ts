@@ -4,7 +4,8 @@ import {
   OnDestroy,
   ChangeDetectorRef,
   ViewChild,
-  ElementRef
+  ElementRef,
+  input
 } from '@angular/core';
 import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -36,6 +37,12 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     private changeDetector: ChangeDetectorRef,
   ) {}
 
+  private masterSubscription!: Subscription;
+  public isSimulation: boolean = false;
+  private MAX_NEIGHBORHOOD_SIZE = 15;
+  private BITMASK_LENGTH = Math.ceil(((this.MAX_NEIGHBORHOOD_SIZE ** 2) - 1) / 32);
+
+  // Color Inputs
   @ViewChild('backgroundColorPicker', { static: false }) backgroundColorPickerRef!: ElementRef<HTMLElement>;
   private backgroundColorPickerElement!: HTMLElement;
   private backgroundColorPicker!: IroColorPicker;
@@ -51,9 +58,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     Validators.pattern(/^#([0-9A-F]{3}){1,2}$/i),
   ]);
 
-  private masterSubscription: Subscription[] = [];
-
-  public isSimulation: boolean = false;
+  // Simulation Configuration Inputs
   public noiseGeneratorControl = new FormControl('fractal', [
     Validators.required
   ]);
@@ -63,7 +68,22 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     Validators.max(244)
   ]);
 
+  // Ruleset inputs
+  private birthMask: boolean[] = new Array((this.MAX_NEIGHBORHOOD_SIZE**2) - 1).fill(false);
+  public birthMaskControl = new FormControl('3',[
+    Validators.required,
+    Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
+  ]);
+  private surviveMask: boolean[] = new Array((this.MAX_NEIGHBORHOOD_SIZE**2) - 1).fill(false);
+  public surviveMaskControl = new FormControl('2-3',[
+    Validators.required,
+    Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
+  ]);
+  private weightCount = 8;
+  
+
   ngAfterViewInit() {
+    this.masterSubscription = new Subscription();
     this.simulation.isInit$.pipe(
       filter(value => value === true),
       take(1)
@@ -80,12 +100,14 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   ngOnDestroy() {
     this.backgroundColorPicker!.off('input:end', this.updateBackgroundColor);
     this.foregroundColorPicker!.off('input:end', this.updateForegroundColor);
-    this.masterSubscription.forEach(subsciption => {
-      subsciption.unsubscribe();
-    });
+    this.masterSubscription.unsubscribe();
   }
 
   private init() {
+    this.birthMask[3] = true;
+    this.surviveMask[2] = true;
+    this.surviveMask[3] = true;
+
     // Setup color pickers
     this.backgroundColorPickerElement = this.backgroundColorPickerRef.nativeElement;
     this.backgroundColorPicker = iro.ColorPicker(this.backgroundColorPickerElement, {
@@ -102,28 +124,136 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.foregroundColorPicker.on('input:end', this.updateForegroundColor);
 
     // Color picker formcontrols
-    this.masterSubscription.push(this.foregroundColorControl.valueChanges.pipe(
+    this.masterSubscription.add(this.foregroundColorControl.valueChanges.pipe(
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
       this.updateColorsFromHex(value!, 1);
     }));
-    this.masterSubscription.push(this.backgroundColorControl.valueChanges.pipe(
+    this.masterSubscription.add(this.backgroundColorControl.valueChanges.pipe(
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
       this.updateColorsFromHex(value!, 0);
     }));
+
+    // Ruleset masks formcontrol
+    this.masterSubscription.add(this.birthMaskControl.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe(value => {
+      if(this.checkMaskInput(value!)){
+        this.stringToMask(value!, this.birthMask);
+        this.simulation.updateRuleMasks(this.birthMask, 0);
+      }
+      else {
+        console.log("Fail");
+      }
+    }));
+    this.masterSubscription.add(this.surviveMaskControl.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe(value => {
+      if(this.checkMaskInput(value!)){
+        this.stringToMask(value!, this.surviveMask);
+        this.simulation.updateRuleMasks(this.surviveMask, 1);
+      }
+      else {
+        console.log("Fail");
+      }
+    }));
+  }
+
+  private formatRange(min: number, max: number): string {
+    return min === max ? `${min}` : `${min}-${max}`;
+  }
+
+  private maskToString(mask: boolean[]): string {
+    const ranges: string[] = [];
+
+    let start: number | null = null;
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]) {
+        if (start === null) {
+          start = i; // begin new range
+        }
+      } else {
+        if (start !== null) {
+          ranges.push(this.formatRange(start, i - 1));
+          start = null;
+        }
+      }
+    }
+    // handle case where mask ends with true
+    if (start !== null) {
+      ranges.push(this.formatRange(start, mask.length - 1));
+    }
+
+    return ranges.join(', ');
+  }
+
+  private stringToMask(stringMask: string, mask: boolean[]){
+    stringMask = stringMask.trim().replace(/,$/, "");
+    mask.fill(false);
+
+    const parts = stringMask.split(',');
+    for (const part of parts) {
+      if(part.includes('-')){
+        const [min, max] = part.split('-').map(Number);
+        for (let i = min; i < max + 1; i++) {
+          mask[i] = true;
+        }
+      }
+      else {
+        mask[Number(part)] = true;
+      }
+    }
+  }
+
+  public birthMaskToString() {
+    const stringMask = this.maskToString(this.birthMask);
+    this.birthMaskControl.setValue(stringMask, { emitEvent: false });
+  }
+
+  public surviveMaskToString() {
+    const stringMask = this.maskToString(this.surviveMask);
+    this.surviveMaskControl.setValue(stringMask, { emitEvent: false });
+  }
+
+  private checkMaskRange(value: number): boolean {
+    return (value >= 0 && value <= this.weightCount);
+  }
+
+  private checkMaskInput(input: string): boolean {
+    input = input.trim().replace(/,$/, "");
+    if (!input || !/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i.test(input)) return false;
+    const parts = input.split(',');
+
+    for (const part of parts ) {
+      if(part.includes('-')){
+        const [min, max] = part.split('-').map(Number);
+        if(min > max) return false;
+        else {
+          const a = this.checkMaskRange(min);
+          const b = this.checkMaskRange(max);
+          if (!(a && b)) return false;
+        }
+      }
+      else{
+        if(!this.checkMaskRange(Number(part))) return false;
+      }
+    }
+    return true;
   }
 
   private updateBackgroundColor = (color: IroColor) => {
     const rgb = color.rgb;
-    this.backgroundColorControl.setValue(color.hexString)
+    this.backgroundColorControl.setValue(color.hexString);
   }
 
   private updateForegroundColor = (color: IroColor) => {
     const rgb = color.rgb;
-    this.foregroundColorControl.setValue(color.hexString)
+    this.foregroundColorControl.setValue(color.hexString);
   }
 
   private updateColorsFromHex(hex: string, index: number) {
@@ -156,6 +286,11 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     let b = Math.floor(Math.random() * 256);
     // Updating formcontrol will update simulation and color picker
     this.foregroundColorControl.setValue(this.rgbToHex(r, g, b));
+  }
+
+  public randomizeAllColors() {
+    this.randomizeForegroundColor();
+    this.randomizeBackgroundColor();
   }
 
   private rgbToHex(r: number, g: number, b: number) {

@@ -160,6 +160,15 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
   private handleKeyDown = (e: KeyboardEvent) => {
     if(this.isLoading) return;
 
+    const target = e.target as HTMLElement;
+
+    const isTyping: boolean =
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable;
+
+    if(isTyping) return;
+
     if (e.code === 'Space') {
       e.preventDefault();
       this.pauseLoop();
@@ -190,6 +199,15 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
 
   private handleKeyUp = (e: KeyboardEvent) => {
     if(this.isLoading) return;
+
+    const target = e.target as HTMLElement;
+
+    const isTyping: boolean =
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable;
+      
+    if(isTyping) return;
 
     if (e.code === 'ArrowUp') {
       this.simulation.directionsPressed[0] = false;

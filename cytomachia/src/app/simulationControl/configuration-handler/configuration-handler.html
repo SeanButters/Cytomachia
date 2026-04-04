@@ -1,48 +1,19 @@
 @if (isSimulation) {
 <div class="page">
   <div class="configContainer">
-    <span class="containerTitle">Simulation Configurations</span>
+    <span class="containerTitle">
+      Change Colors
+      <button 
+        matButton
+        matTooltip="Randomize all colors"
+        (click)="randomizeAllColors()">
+        <mat-icon fontIcon="casino"></mat-icon>
+      </button>
+    </span>
     <div class="configOption">
-      <span class="configTitle">Noise Generator</span>
-      <mat-radio-group 
-      (change)="updateNoiseGenerator($event.value)"
-      [formControl]="noiseGeneratorControl">
-        <mat-radio-button value="white noise">White noise</mat-radio-button>
-        <mat-radio-button value="simplex">Simplex</mat-radio-button>
-        <mat-radio-button value="fractal">Fractal</mat-radio-button>
-      </mat-radio-group>
-    </div>
-    <div class="configOption">
-      <span class="configTitle">Maximum Frame Rate</span>
-      <mat-slider
-        min="8"
-        max="244"
-        step="8">
-        <input matSliderThumb [formControl]="fpsControl" (dragEnd)="updateTargetFPS(fpsControl.value!)">
-      </mat-slider>
-    </div>
-    <div class="configOption">
-      <span class="configTitle">Background Color</span>
-      <div id="backgroundColorPicker" #backgroundColorPicker></div>
-      <div>
-        <span>Hex Color: </span>
-        <input type="text" [formControl]="backgroundColorControl">
-        <button 
-          matButton
-          matTooltip="Randomize cell color"
-          (click)="randomizeBackgroundColor()">
-          <mat-icon fontIcon="casino"></mat-icon>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div class="configContainer">
-    <span class="containerTitle">Ruleset Configurations</span>
-    <div class="configOption">
-      <span class="configTitle">Cell Color</span>
-      <div id="foregroundColorPicker" #foregroundColorPicker></div>
-      <div>
+      <span class="optionTitle">Cell Color</span>
+      <div class="colorPicker" id="foregroundColorPicker" #foregroundColorPicker></div>
+      <div class="hexInput">
         <span>Hex Color: </span>
         <input type="text" [formControl]="foregroundColorControl">
         <button 
@@ -52,6 +23,53 @@
           <mat-icon fontIcon="casino"></mat-icon>
         </button>
       </div>
+    </div>
+    <div class="configOption">
+      <span class="optionTitle">Background Color</span>
+      <div class="colorPicker" id="backgroundColorPicker" #backgroundColorPicker></div>
+      <div class="hexInput">
+        <span>Hex Color: </span>
+        <input type="text" [formControl]="backgroundColorControl">
+        <button 
+          matButton
+          matTooltip="Randomize background color"
+          (click)="randomizeBackgroundColor()">
+          <mat-icon fontIcon="casino"></mat-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="configContainer">
+    <span class="containerTitle">Simulation Configurations</span>
+    <div class="configOption">
+      <span class="optionTitle">Maximum Frame Rate</span>
+      <mat-slider
+        min="8"
+        max="244"
+        step="8">
+        <input matSliderThumb [formControl]="fpsControl" (dragEnd)="updateTargetFPS(fpsControl.value!)">
+      </mat-slider>
+    </div>
+    <div class="configOption">
+      <span class="optionTitle">Noise Generator</span>
+      <mat-radio-group 
+      (change)="updateNoiseGenerator($event.value)"
+      [formControl]="noiseGeneratorControl">
+        <mat-radio-button value="white noise">White noise</mat-radio-button>
+        <mat-radio-button value="simplex">Simplex</mat-radio-button>
+        <mat-radio-button value="fractal">Fractal</mat-radio-button>
+      </mat-radio-group>
+    </div>
+  </div>
+  <div class="configContainer">
+    <span class="containerTitle">Ruleset Configurations</span>
+    <div class="configOption">
+      <span class="optionTitle">Birth Range(s)</span>
+      <input type="text" [formControl]="birthMaskControl" (blur)="birthMaskToString()">
+    </div>
+    <div class="configOption">
+      <span class="optionTitle">Survive Range(s)</span>
+      <input type="text" [formControl]="surviveMaskControl" (blur)="surviveMaskToString()">
     </div>
   </div>
 </div>
