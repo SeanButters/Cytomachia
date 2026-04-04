@@ -69,17 +69,20 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   ]);
 
   // Ruleset inputs
-  private birthMask: boolean[] = new Array((this.MAX_NEIGHBORHOOD_SIZE**2) - 1).fill(false);
+  public weightCount = 8;
+  public birthMask: boolean[] = new Array(this.weightCount).fill(false);
   public birthMaskControl = new FormControl('3',[
     Validators.required,
     Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
   ]);
-  private surviveMask: boolean[] = new Array((this.MAX_NEIGHBORHOOD_SIZE**2) - 1).fill(false);
+  public surviveMask: boolean[] = new Array(this.weightCount).fill(false);
   public surviveMaskControl = new FormControl('2-3',[
     Validators.required,
     Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
   ]);
-  private weightCount = 8;
+
+  // Neighborhood inputs
+  public isCombinedKernelControl = new FormControl(true);
   
 
   ngAfterViewInit() {
@@ -107,6 +110,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.birthMask[3] = true;
     this.surviveMask[2] = true;
     this.surviveMask[3] = true;
+    this.changeDetector.detectChanges();
 
     // Setup color pickers
     this.backgroundColorPickerElement = this.backgroundColorPickerRef.nativeElement;
@@ -164,6 +168,22 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     }));
   }
 
+  public toggleBirthMask (index: number) {
+    this.toggleMask(this.birthMask, index);
+    this.birthMaskToString();
+    this.simulation.updateRuleMasks(this.birthMask, 0);
+  }
+
+  public toggleSurviveMask (index: number ) {
+    this.toggleMask(this.surviveMask, index);
+    this.surviveMaskToString();
+    this.simulation.updateRuleMasks(this.surviveMask, 1);
+  }
+
+  private toggleMask(mask: boolean[], index: number){
+    mask[index] = !mask[index];
+  }
+
   private formatRange(min: number, max: number): string {
     return min === max ? `${min}` : `${min}-${max}`;
   }
@@ -208,6 +228,8 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
         mask[Number(part)] = true;
       }
     }
+
+    this.changeDetector.detectChanges();
   }
 
   public birthMaskToString() {

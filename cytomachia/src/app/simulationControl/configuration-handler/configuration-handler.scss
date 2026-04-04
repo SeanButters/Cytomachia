@@ -11,41 +11,77 @@
   background-color: var(--mat-sys-surface);
   border: 2px solid blue;
   border-radius: 5px;
-  padding: 10px;
-  gap: 20px;
 
   .containerTitle {
     display: flex; 
     justify-content: center;
     font-weight: bold;
-    background-color: rgb(209, 209, 209);
+    background-color: rgb(130, 130, 130);
   }
 
-  .configOption {
-    justify-content: center;
+  .containerContents {
+    padding: 10px;
+    gap: 20px;
     display: flex;
     flex-direction: column;
 
-    .optionTitle {
-      display: flex; 
+    .configOption {
       justify-content: center;
-      padding-bottom: 5px;
-    }
-
-    .colorPicker {
-      width: fit-content;
-      margin-left: 12.5px;
-    }
-
-    .hexInput {
-      padding-top: 10px;
-      gap: 5px;
-      align-content: center;
       display: flex;
+      flex-direction: column;
 
-      span {
-        align-content: center;
+      .optionTitle {
+        display: flex; 
+        justify-content: center;
+        padding-bottom: 5px;
       }
-    };
+
+      .colorPicker {
+        width: fit-content;
+        margin-left: 12.5px;
+      }
+
+      .hexInput {
+        padding-top: 10px;
+        gap: 5px;
+        align-content: center;
+        display: flex;
+
+        span {
+          align-content: center;
+        }
+      };
+    }
+  }
+}
+
+.maskContainer {
+  display: flex;
+  flex-direction: row;
+
+  .bitContainer {
+    display: flex;
+    flex-direction: column;
+
+    span {
+      display: inline-flex;
+      justify-content: center;
+      align-items: flex-end;
+      font-size: 10px;
+      text-align: center;
+      height: 15px;
+      line-height: 10px;
+    }
+
+    .maskCell {
+      display: block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid gray;
+      background-color: black;
+    }
+    .maskCell.active{
+      background-color: yellow;
+    }
   }
 }
