@@ -26,8 +26,9 @@
     flex-direction: column;
 
     .configOption {
+      align-content: center;
       justify-content: center;
-      display: flex;
+      display: grid;
       flex-direction: column;
 
       .optionTitle {
@@ -58,6 +59,9 @@
 .maskContainer {
   display: flex;
   flex-direction: row;
+  width: fit-content;
+  max-width: 519px;
+  flex-wrap: wrap;
 
   .bitContainer {
     display: flex;
@@ -69,7 +73,7 @@
       align-items: flex-end;
       font-size: 10px;
       text-align: center;
-      height: 15px;
+      height: 11px;
       line-height: 10px;
     }
 
@@ -77,11 +81,50 @@
       display: block;
       width: 15px;
       height: 15px;
-      border: 2px solid gray;
+      border: 1px solid rgb(192, 192, 192);
       background-color: black;
     }
+    .maskCell:hover {
+      border: 1px solid gray;
+      background-color: rgb(36, 36, 36);
+      cursor: pointer;
+    }
     .maskCell.active{
-      background-color: yellow;
+      background-color: rgb(255, 50, 50)
+    }
+    .maskCell.active:hover {
+      background-color: rgb(178, 36, 36)
     }
   }
+}
+
+.kernel {
+  width: 250px;
+}
+
+.kernelCell {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border: 1px solid rgb(192, 192, 192);
+  background-color: black;
+}
+.kernelCell:hover {
+  border: 1px solid gray;
+  background-color: rgb(58, 58, 58);
+  cursor: pointer;
+}
+.kernelCell.active{
+  background-color: rgb(255, 50, 50)
+}
+.kernelCell.active:hover {
+  background-color: rgb(178, 36, 36)
+}
+.kernelCell.inactive {
+  background-color: rgb(82, 82, 82);
+}
+.kernelCell.inactive:hover {
+  background-color: rgb(82, 82, 82);
+  border: 1px solid rgb(192, 192, 192);
+  cursor: default;
 }

@@ -65,6 +65,7 @@ export class SimulationService {
   public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
   private pendingColors: Array<Float32Array<ArrayBuffer> | null> = [null, null]; // Buffer color inputs
   private pendingRuleMasks: Array<Uint32Array<ArrayBuffer> | null> = [null, null];
+  private pendingKernels: Array<ArrayBuffer | null> = [null, null];
 
   // Camera vars
   private cameraBuffer!: GPUBuffer;
@@ -212,6 +213,31 @@ export class SimulationService {
       if(ruleArrayMask[i]) this.setBit(ruleMask, i);
     }
     this.pendingRuleMasks[rule] = ruleMask;
+  }
+
+  updateKernels(newKernel: Array<Array<number>>, rule: number) {
+    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
+    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
+    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
+    let weightCount = 0;
+    let weightSum = 0;
+
+    for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
+        const weight = newKernel[y][x];
+        if (weight > 0) {
+          weightCount++;
+          weightSum += weight;
+          kernel[this.index(x, y, this.MAX_NEIGHBORHOOD_SIZE)] = weight;
+        }
+      }
+    }
+
+    const scale = weightCount/weightSum;
+    new Uint32Array(buffer, 0, kernelArea).set(kernel);
+    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+
+    this.pendingKernels[rule] = buffer;
   }
 
   private setBit(mask: Uint32Array, n: number) {
@@ -372,6 +398,7 @@ export class SimulationService {
       this.handleDirectionInput();
       this.handleColorInput();
       this.handleMaskInput();
+      this.handleKernelInput();
 
       this.inputStepAccumulator -= stepInterval;
     }
@@ -379,8 +406,20 @@ export class SimulationService {
     this.lastInputTime = time;
   }
 
+  private handleKernelInput() {
+    for (let i = 0; i < 2; i++) {
+      const kernel = this.pendingKernels[i];
+      if(kernel != null) {
+        if (i === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, kernel);
+        else this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, kernel);
+
+        this.pendingKernels[i] = null;
+      }
+    }
+  }
+
   private handleMaskInput() {
-    for (let i = 0; i < this.pendingRuleMasks.length; i++) {
+    for (let i = 0; i < 2; i++) {
       const ruleMask = this.pendingRuleMasks[i];
       if(ruleMask != null) {
         this.device.queue.writeBuffer(
@@ -389,7 +428,7 @@ export class SimulationService {
           ruleMask
         );
 
-        this.pendingRuleMasks[i] = null;
+        this.pendingRuleMasks[i] = undefined as any;
       }
     }
   }
@@ -440,36 +479,6 @@ export class SimulationService {
 
   private index(x: number, y: number, width: number ): number {
     return (y * width) + x;
-  }
-
-  private updateNeighborhoodBuffer(index: number, rule: number) {
-    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
-    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
-    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
-    let weightCount = 0;
-    let weightSum = 0;
-
-    const center: orderedPair = { 
-      x: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2),
-      y: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2) 
-    }
-
-    kernel[this.index(center.x - 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-    kernel[this.index(center.x - 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;     kernel[this.index(center.x, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 0;     kernel[this.index(center.x + 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-    kernel[this.index(center.x - 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-
-    for(const weight of kernel){
-      if (weight > 0) weightCount++;
-      weightSum += weight;
-    }
-
-    const scale = weightCount/weightSum;
-
-    new Uint32Array(buffer, 0, kernelArea).set(kernel);
-    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
-
-    if(rule === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, buffer);
-    else if (rule === 1) this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, buffer);
   }
 
   private updateCameraBuffer() {
@@ -624,8 +633,12 @@ export class SimulationService {
   }
 
   fn checkBitmask(mask: array<u32,${this.BITMASK_LENGTH}>, value: u32) -> bool {
-    let word = value >> 5u;       // divide by 32
-    let bit  = value & 31u;       // mod 32
+    if(value == 0u) {
+      return false;
+    }
+    let index = value - 1u;
+    let word = index >> 5u;       // divide by 32
+    let bit  = index & 31u;       // mod 32
     return (mask[word] & (1u << bit)) != 0u;
   }
 
@@ -935,10 +948,10 @@ export class SimulationService {
     });
     const rules = new Uint32Array((this.BITMASK_LENGTH * 2) + 1);
     // Birth: 3 neighbors
-    rules[0] |= (1 << 3);
+    rules[0] |= (1 << 2);
     // Survive: 2 or 3 neighbors
+    rules[this.BITMASK_LENGTH] |= (1 << 1);
     rules[this.BITMASK_LENGTH] |= (1 << 2);
-    rules[this.BITMASK_LENGTH] |= (1 << 3);
     rules[this.BITMASK_LENGTH * 2] = 1;
     this.device.queue.writeBuffer(
       this.rulesBuffer,
@@ -950,13 +963,13 @@ export class SimulationService {
       size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.updateNeighborhoodBuffer(0, 0);
+    this.initNeighborhoodBuffer(0);
 
     this.sNeighborhoodBuffer = this.device.createBuffer({
       size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.updateNeighborhoodBuffer(0, 1);
+    this.initNeighborhoodBuffer(1);
   }
 
   private createCameraBuffer() {
@@ -974,6 +987,36 @@ export class SimulationService {
     });
     this.updateColors(0, 0, 0, 0);
     this.updateColors(128, 255, 255, 1);
+  }
+
+  private initNeighborhoodBuffer(rule: number) {
+    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
+    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
+    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
+    let weightCount = 0;
+    let weightSum = 0;
+
+    const center: orderedPair = { 
+      x: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2),
+      y: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2) 
+    }
+
+    kernel[this.index(center.x - 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;     kernel[this.index(center.x, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 0;     kernel[this.index(center.x + 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+
+    for(const weight of kernel){
+      if (weight > 0) weightCount++;
+      weightSum += weight;
+    }
+
+    const scale = weightCount/weightSum;
+
+    new Uint32Array(buffer, 0, kernelArea).set(kernel);
+    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+
+    if(rule === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, buffer);
+    else if (rule === 1) this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, buffer);
   }
 
 }

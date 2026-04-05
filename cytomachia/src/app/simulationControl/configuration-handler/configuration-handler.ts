@@ -5,7 +5,6 @@ import {
   ChangeDetectorRef,
   ViewChild,
   ElementRef,
-  input
 } from '@angular/core';
 import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -18,6 +17,7 @@ import iro from '@jaames/iro';
 import { IroColorPicker } from '@jaames/iro/dist/ColorPicker';
 import { IroColor } from '@irojs/iro-core/dist/color'
 import { Subscription } from 'rxjs';
+import { MatTooltip } from "@angular/material/tooltip";
 
 @Component({
   selector: 'app-configuration-handler',
@@ -27,6 +27,7 @@ import { Subscription } from 'rxjs';
     MatSliderModule,
     MatFormFieldModule,
     MatIconModule,
+    MatTooltip
 ],
   templateUrl: './configuration-handler.html',
   styleUrl: './configuration-handler.scss',
@@ -40,7 +41,6 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   private masterSubscription!: Subscription;
   public isSimulation: boolean = false;
   private MAX_NEIGHBORHOOD_SIZE = 15;
-  private BITMASK_LENGTH = Math.ceil(((this.MAX_NEIGHBORHOOD_SIZE ** 2) - 1) / 32);
 
   // Color Inputs
   @ViewChild('backgroundColorPicker', { static: false }) backgroundColorPickerRef!: ElementRef<HTMLElement>;
@@ -69,20 +69,22 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   ]);
 
   // Ruleset inputs
-  public weightCount = 8;
-  public birthMask: boolean[] = new Array(this.weightCount).fill(false);
-  public birthMaskControl = new FormControl('3',[
-    Validators.required,
+  public birthWeightCount = 8;
+  public birthMask: boolean[] = [];
+  public birthMaskControl = new FormControl('',[
     Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
   ]);
-  public surviveMask: boolean[] = new Array(this.weightCount).fill(false);
-  public surviveMaskControl = new FormControl('2-3',[
-    Validators.required,
+  public surviveWeightCount = 8;
+  public surviveMask: boolean[] = [];
+  public surviveMaskControl = new FormControl('',[
     Validators.pattern(/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i)
   ]);
 
   // Neighborhood inputs
   public isCombinedKernelControl = new FormControl(true);
+  public isDetailedKernelViewControl = new FormControl(false);
+  public birthKernel: Array<Array<number>> = [];
+  public surviveKernel: Array<Array<number>> = [];
   
 
   ngAfterViewInit() {
@@ -107,10 +109,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   }
 
   private init() {
-    this.birthMask[3] = true;
-    this.surviveMask[2] = true;
-    this.surviveMask[3] = true;
-    this.changeDetector.detectChanges();
+    this.initConway();
 
     // Setup color pickers
     this.backgroundColorPickerElement = this.backgroundColorPickerRef.nativeElement;
@@ -146,7 +145,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
-      if(this.checkMaskInput(value!)){
+      if(this.checkMaskInput(value!, this.birthWeightCount)){
         this.stringToMask(value!, this.birthMask);
         this.simulation.updateRuleMasks(this.birthMask, 0);
       }
@@ -158,7 +157,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       debounceTime(200),
       distinctUntilChanged()
     ).subscribe(value => {
-      if(this.checkMaskInput(value!)){
+      if(this.checkMaskInput(value!, this.surviveWeightCount)){
         this.stringToMask(value!, this.surviveMask);
         this.simulation.updateRuleMasks(this.surviveMask, 1);
       }
@@ -195,11 +194,11 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     for (let i = 0; i < mask.length; i++) {
       if (mask[i]) {
         if (start === null) {
-          start = i; // begin new range
+          start = i + 1; // begin new range
         }
       } else {
         if (start !== null) {
-          ranges.push(this.formatRange(start, i - 1));
+          ranges.push(this.formatRange(start, i));
           start = null;
         }
       }
@@ -213,6 +212,12 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   }
 
   private stringToMask(stringMask: string, mask: boolean[]){
+    if(!stringMask || stringMask === ''){
+      mask.fill(false);
+      this.changeDetector.detectChanges();
+      return;
+    }
+
     stringMask = stringMask.trim().replace(/,$/, "");
     mask.fill(false);
 
@@ -221,11 +226,11 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       if(part.includes('-')){
         const [min, max] = part.split('-').map(Number);
         for (let i = min; i < max + 1; i++) {
-          mask[i] = true;
+          mask[i - 1] = true;
         }
       }
       else {
-        mask[Number(part)] = true;
+        mask[Number(part) - 1] = true;
       }
     }
 
@@ -242,13 +247,14 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.surviveMaskControl.setValue(stringMask, { emitEvent: false });
   }
 
-  private checkMaskRange(value: number): boolean {
-    return (value >= 0 && value <= this.weightCount);
+  private checkMaskRange(value: number, weightCount: number): boolean {
+    return (value > 0 && value <= weightCount);
   }
 
-  private checkMaskInput(input: string): boolean {
+  private checkMaskInput(input: string, weigthCount: number): boolean {
+    if(!input || input === '') return true;
     input = input.trim().replace(/,$/, "");
-    if (!input || !/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i.test(input)) return false;
+    if (!/^\s*\d+\s*(?:-\s*\d+)?\s*(?:,\s*\d+\s*(?:-\s*\d+)?\s*)*$/i.test(input)) return false;
     const parts = input.split(',');
 
     for (const part of parts ) {
@@ -256,13 +262,13 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
         const [min, max] = part.split('-').map(Number);
         if(min > max) return false;
         else {
-          const a = this.checkMaskRange(min);
-          const b = this.checkMaskRange(max);
+          const a = this.checkMaskRange(min, weigthCount);
+          const b = this.checkMaskRange(max, weigthCount);
           if (!(a && b)) return false;
         }
       }
       else{
-        if(!this.checkMaskRange(Number(part))) return false;
+        if(!this.checkMaskRange(Number(part), weigthCount)) return false;
       }
     }
     return true;
@@ -320,11 +326,183 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
+  public backgroundColorBlur() {
+    this.backgroundColorControl.setValue(this.backgroundColorPicker.color.hexString, { emitEvent: false });
+  }
+
+  public foregroundColorBlur() {
+    this.foregroundColorControl.setValue(this.foregroundColorPicker.color.hexString, { emitEvent: false });
+  }
+
+  public toggleKernelCell(x: number, y: number, rule: number) {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return;
+
+    let kernel: Array<Array<number>> = [];
+    if(rule === 0) {
+      const kernel = this.birthKernel;
+      const value = kernel[y][x]
+      if(value === 0) {
+        kernel[y][x] = 1;
+        this.birthWeightCount++;
+        this.birthMask.push(false);
+        if(this.isCombinedKernelControl.value) {
+          this.surviveWeightCount++;
+          this.surviveMask.push(false);
+        }
+      }
+      else {
+        kernel[y][x] = 0;
+        this.birthWeightCount -= 1;
+        this.birthMask.pop();
+        this.birthMaskControl.setValue(this.maskToString(this.birthMask), { emitEvent: false });
+        this.simulation.updateRuleMasks(this.birthMask, 0);
+        if(this.isCombinedKernelControl.value) {
+          this.surviveWeightCount -= 1;
+          this.surviveMask.pop();
+          this.surviveMaskControl.setValue(this.maskToString(this.surviveMask), { emitEvent: false });
+          this.simulation.updateRuleMasks(this.surviveMask, 1);
+        }
+      }
+      this.simulation.updateKernels(this.birthKernel, rule);
+      if(this.isCombinedKernelControl.value) this.simulation.updateKernels(this.surviveKernel, rule)
+    } else {
+      const kernel = this.surviveKernel;
+      const value = kernel[y][x]
+
+      if(value === 0) {
+        kernel[y][x] = 1;
+        this.surviveWeightCount++;
+        this.surviveMask.push(false);
+      }
+      else {
+        kernel[y][x] = 0;
+        this.surviveWeightCount -= 1;
+        this.surviveMask.pop();
+        this.surviveMaskControl.setValue(this.maskToString(this.surviveMask), { emitEvent: false });
+        this.simulation.updateRuleMasks(this.surviveMask, 1);
+      }
+      this.simulation.updateKernels(this.surviveKernel, rule);
+    }
+  }
+
+  public updateCombinedKernel() {
+    if(!this.isCombinedKernelControl.value) {
+      this.surviveKernel = this.copyKernel(this.birthKernel);
+    } else {
+      this.surviveKernel = this.birthKernel;
+    }
+  }
+
   public updateNoiseGenerator(generator: string) {
     this.simulation.updateNoiseGenerator(generator);
   }
 
   public updateTargetFPS(value: number) {
     this.simulation.updateTargetFPS(value);
+  }
+
+
+  ///
+  /// Preset helper methods
+  ///
+
+  // private index(x: number, y: number, width: number ): number {
+  //   return (y * width) + x;
+  // }
+
+  private getEmptyKernel(): Array<Array<number>> {
+    const kernel: Array<Array<number>> = [];
+
+    for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
+        row.push(0);
+      }
+      kernel.push(row);
+    }
+    return kernel;
+  }
+
+  private copyKernel(oKernel: Array<Array<number>>): Array<Array<number>> {
+    // Copy values not addresses
+    const newKernel: Array<Array<number>> = oKernel.map(row => [...row]);
+    return newKernel;
+  }
+
+
+  ///
+  /// Init presets
+  ///
+
+  private initPreset(
+    birthMaskString: string,
+    surviveMaskString: string,
+    birthKernel: Array<Array<number>>,
+    surviveKernel: Array<Array<number>> | null,
+    isDetailedKernelView: boolean
+  ) {
+    // Init kernels
+    this.isDetailedKernelViewControl.setValue(isDetailedKernelView);
+
+    this.birthKernel  = birthKernel;
+    if (surviveKernel != null) {
+      this.surviveKernel = surviveKernel;
+      this.isCombinedKernelControl.setValue(false);
+    }
+    else {
+      this.surviveKernel = this.birthKernel;
+      this.isCombinedKernelControl.setValue(true);
+    }
+    this.updateCombinedKernel();
+
+    this.simulation.updateKernels(this.birthKernel, 0);
+    this.simulation.updateKernels(this.surviveKernel, 1);
+
+    // Count weights
+    this.birthWeightCount = 0;
+    this.surviveWeightCount = 0;
+    for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
+        if(this.birthKernel[y][x] > 0) this.birthWeightCount++;
+        if(this.surviveKernel[y][x] > 0) this.surviveWeightCount++;
+      }
+    }
+
+    // Init masks
+    this.birthMask = new Array(this.birthWeightCount).fill(false);
+    this.birthMaskControl.setValue(birthMaskString);
+    this.stringToMask(birthMaskString, this.birthMask);
+    this.simulation.updateRuleMasks(this.birthMask, 0);
+  
+    this.surviveMask = new Array(this.surviveWeightCount).fill(false);
+    this.surviveMaskControl.setValue(surviveMaskString);
+    this.stringToMask(surviveMaskString, this.surviveMask);
+    this.simulation.updateRuleMasks(this.surviveMask, 1);
+
+
+    this.changeDetector.detectChanges();
+  }
+
+  public initConway() {
+    const kernel = this.getEmptyKernel();
+    // Set Ruleset strings
+    const birthMaskString = '3';
+    const surviveMaskString = '2-3';
+
+    // Set kernels
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2); 
+
+    kernel[center + 1][center - 1] = 1; kernel[center + 1][center] = 1; kernel[center + 1][center + 1] = 1;
+    kernel[center][center - 1] = 1;     kernel[center][center] = 0;     kernel[center][center + 1] = 1;
+    kernel[center - 1][center - 1] = 1; kernel[center - 1][center] = 1; kernel[center - 1][center + 1] = 1;
+
+    this.initPreset(
+      birthMaskString,
+      surviveMaskString,
+      kernel, 
+      null,
+      false
+    );
   }
 }
