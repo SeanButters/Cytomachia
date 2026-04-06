@@ -85,6 +85,12 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   public isDetailedKernelViewControl = new FormControl(false);
   public birthKernel: Array<Array<number>> = [];
   public surviveKernel: Array<Array<number>> = [];
+  public isEditingX: number = -1;
+  public isEditingY: number = -1;
+  public kernelValueControl = new FormControl('',
+    Validators.pattern(/^[0-9]$/)
+  )
+  @ViewChild('kernelInput') kernelInputElement!: ElementRef;
   
 
   ngAfterViewInit() {
@@ -166,6 +172,10 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       }
     }));
   }
+
+  ///
+  /// UI methods
+  ///
 
   public toggleBirthMask (index: number) {
     this.toggleMask(this.birthMask, index);
@@ -334,16 +344,14 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.foregroundColorControl.setValue(this.foregroundColorPicker.color.hexString, { emitEvent: false });
   }
 
-  public toggleKernelCell(x: number, y: number, rule: number) {
-    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
-    if(x === center && y === center) return;
+  private updateMaskFromKernelChange(oldValue: number, newValue: number, rule: number){
+    if (oldValue === newValue) return;
 
-    let kernel: Array<Array<number>> = [];
-    if(rule === 0) {
-      const kernel = this.birthKernel;
-      const value = kernel[y][x]
-      if(value === 0) {
-        kernel[y][x] = 1;
+    const mask = rule === 0 ? this.birthMask : this.surviveMask;
+    const chainedMask = rule === 0 && this.isCombinedKernelControl.value ? this.surviveMask : null;
+    
+    if(rule === 0) { // Use birth mask
+      if(oldValue === 0) { // push mask
         this.birthWeightCount++;
         this.birthMask.push(false);
         if(this.isCombinedKernelControl.value) {
@@ -351,8 +359,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
           this.surviveMask.push(false);
         }
       }
-      else {
-        kernel[y][x] = 0;
+      else if (newValue === 0) { // pop mask + update simulation mask
         this.birthWeightCount -= 1;
         this.birthMask.pop();
         this.birthMaskControl.setValue(this.maskToString(this.birthMask), { emitEvent: false });
@@ -364,26 +371,92 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
           this.simulation.updateRuleMasks(this.surviveMask, 1);
         }
       }
-      this.simulation.updateKernels(this.birthKernel, rule);
-      if(this.isCombinedKernelControl.value) this.simulation.updateKernels(this.surviveKernel, rule)
-    } else {
-      const kernel = this.surviveKernel;
-      const value = kernel[y][x]
-
-      if(value === 0) {
-        kernel[y][x] = 1;
+    } else { // use survive mask
+      if(oldValue === 0) { // push mask
         this.surviveWeightCount++;
         this.surviveMask.push(false);
       }
-      else {
-        kernel[y][x] = 0;
+      else if (newValue === 0) { // pop mask + update simulation mask
         this.surviveWeightCount -= 1;
         this.surviveMask.pop();
         this.surviveMaskControl.setValue(this.maskToString(this.surviveMask), { emitEvent: false });
         this.simulation.updateRuleMasks(this.surviveMask, 1);
       }
-      this.simulation.updateKernels(this.surviveKernel, rule);
     }
+  }
+
+  public submitKernelControl(x: number, y: number, rule: 0) {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return;
+
+    if(this.kernelValueControl.value && /^[0-9]$/.test(this.kernelValueControl.value)) {
+      const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+      const oldValue = kernel[y][x];
+      const newValue = Number(this.kernelValueControl.value);
+      
+
+      if(oldValue != newValue) {
+        kernel[y][x] = newValue;
+
+        this.updateMaskFromKernelChange(oldValue, newValue, rule)
+
+        this.simulation.updateKernels(kernel, rule);
+        if(this.isCombinedKernelControl.value) this.simulation.updateKernels(this.surviveKernel, 1);
+      }
+    }
+
+    this.kernelValueControl.setValue('');
+    this.isEditingX = -1;
+    this.isEditingY = -1;
+  }
+
+  public toggleKernelCell(x: number, y: number, rule: number) {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return;
+
+    const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+    const oldValue = kernel[y][x];
+    const newValue = oldValue === 1 ? 0 : 1;
+
+    kernel[y][x] = newValue;
+
+    this.updateMaskFromKernelChange(oldValue, newValue, rule)
+
+    this.simulation.updateKernels(kernel, rule);
+    if(this.isCombinedKernelControl.value) this.simulation.updateKernels(this.surviveKernel, 1);
+  }
+
+  public toggleEditKernelCell(x: number, y: number, rule: 0) {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return;
+
+    this.isEditingX = x;
+    this.isEditingY = y;
+    this.kernelValueControl.setValue(this.getKernelCellValue(x, y, rule));
+    this.changeDetector.detectChanges();
+
+    this.kernelInputElement!.nativeElement.focus();
+  }
+
+  public getKernelCellColor(x: number, y: number, rule: 0): string {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return 'rgb(82, 82, 82)';
+
+    const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+    const value = kernel[y][x]
+    if(value === 0) return 'black'
+
+    const hue = ((value - 1) / 8) * 120;
+
+    return 'hsl('+hue+', 70%, 50%)';
+  }
+
+  public getKernelCellValue(x: number, y: number, rule: 0): string {
+    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
+    if(x === center && y === center) return '';
+
+    const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+    return kernel[y][x].toString();
   }
 
   public updateCombinedKernel() {
@@ -391,6 +464,19 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       this.surviveKernel = this.copyKernel(this.birthKernel);
     } else {
       this.surviveKernel = this.birthKernel;
+    }
+  }
+
+  public updateDetailedKernelView() {
+    if(!this.isDetailedKernelViewControl.value) {
+      for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
+        for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
+          if(this.birthKernel[y][x] > 1) this.birthKernel[y][x] = 1;
+          if(this.surviveKernel[y][x] > 1) this.surviveKernel[y][x] = 1;
+        }
+      }
+      this.simulation.updateKernels(this.birthKernel, 0);
+      this.simulation.updateKernels(this.surviveKernel, 1);
     }
   }
 
@@ -406,11 +492,6 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   ///
   /// Preset helper methods
   ///
-
-  // private index(x: number, y: number, width: number ): number {
-  //   return (y * width) + x;
-  // }
-
   private getEmptyKernel(): Array<Array<number>> {
     const kernel: Array<Array<number>> = [];
 

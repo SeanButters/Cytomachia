@@ -3,20 +3,25 @@
   display: flex;
   width: calc(100% - 20px);
   justify-content: center;
+  gap: 10px;
 }
 
 .configContainer {
   display: flex;
   flex-direction: column;
   background-color: var(--mat-sys-surface);
-  border: 2px solid blue;
+  border: 2px solid rgb(0, 0, 0);
   border-radius: 5px;
+  height: fit-content;
 
   .containerTitle {
     display: flex; 
     justify-content: center;
     font-weight: bold;
-    background-color: rgb(130, 130, 130);
+    background-color: rgb(163, 163, 163);
+    border: 2px solid rgb(80, 80, 80);
+    border-radius: 4px;
+    padding: 10px 0;
   }
 
   .containerContents {
@@ -76,25 +81,6 @@
       height: 11px;
       line-height: 10px;
     }
-
-    .maskCell {
-      display: block;
-      width: 15px;
-      height: 15px;
-      border: 1px solid rgb(192, 192, 192);
-      background-color: black;
-    }
-    .maskCell:hover {
-      border: 1px solid gray;
-      background-color: rgb(36, 36, 36);
-      cursor: pointer;
-    }
-    .maskCell.active{
-      background-color: rgb(255, 50, 50)
-    }
-    .maskCell.active:hover {
-      background-color: rgb(178, 36, 36)
-    }
   }
 }
 
@@ -103,7 +89,8 @@
 }
 
 .kernelCell {
-  display: block;
+  display: grid;
+  align-content: center;
   width: 15px;
   height: 15px;
   border: 1px solid rgb(192, 192, 192);
@@ -123,6 +110,16 @@
 .kernelCell.inactive {
   background-color: rgb(82, 82, 82);
 }
+
+.detailCell {
+  color: rgb(235, 235, 235);
+  text-align: center;
+  font-size: 11px;
+}
+.detailCell:hover {
+  cursor: text;
+}
+
 .kernelCell.inactive:hover {
   background-color: rgb(82, 82, 82);
   border: 1px solid rgb(192, 192, 192);
