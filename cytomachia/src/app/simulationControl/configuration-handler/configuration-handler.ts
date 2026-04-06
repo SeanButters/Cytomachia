@@ -156,7 +156,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
         this.simulation.updateRuleMasks(this.birthMask, 0);
       }
       else {
-        console.log("Fail");
+        console.log("Invalid input"); //TODO implement error bar
       }
     }));
     this.masterSubscription.add(this.surviveMaskControl.valueChanges.pipe(
@@ -168,7 +168,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
         this.simulation.updateRuleMasks(this.surviveMask, 1);
       }
       else {
-        console.log("Fail");
+        console.error("Invalid input"); //TODO implement error bar
       }
     }));
   }

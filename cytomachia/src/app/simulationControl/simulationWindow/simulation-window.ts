@@ -69,7 +69,6 @@ export class GpuCanvasComponent implements AfterViewInit, OnDestroy {
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
     this.isLoadingSubscription = this.simulation.isLoading$.subscribe(value => {
-      console.log(value)
       this.isLoading = value;
       this.changeDetector.detectChanges();
     });
