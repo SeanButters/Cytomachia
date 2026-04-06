@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
-import { createNoise2D } from "simplex-noise";
+import { createNoise4D } from "simplex-noise";
+import { Observable, BehaviorSubject, ReplaySubject  } from 'rxjs';
 
 interface orderedPair {
   x: number,
@@ -9,7 +10,7 @@ interface orderedPair {
 @Injectable({
   providedIn: 'root',
 })
-export class WebGPUService {
+export class SimulationService {
 
   ///
   /// Vars
@@ -24,7 +25,7 @@ export class WebGPUService {
   private gridParamsBuffer!: GPUBuffer;
   private stateBuffers: GPUBuffer[] = [];
   private pingpongIndex = 0;
-  private rulesBuffer!: GPUBuffer; //[] = []; //TODO
+  private rulesBuffer!: GPUBuffer; //[] = []; //TODO for multiple rulesets
   private bNeighborhoodBuffer!: GPUBuffer;
   private sNeighborhoodBuffer!: GPUBuffer;
   //private rulsetIndex = 0;
@@ -41,6 +42,7 @@ export class WebGPUService {
   private renderParamsBindGroup!: GPUBindGroup;
 
   // Simulation constraints
+  private noiseGenerator = 'fractal'
   private cellSizeBytes = 4; // Num bytes per cell in memory (4 bytes for Int32)
   private gridSize: orderedPair = { x: 2560, y: 1444 };
   private MAX_RULESETS = 1;
@@ -48,11 +50,22 @@ export class WebGPUService {
   private BITMASK_LENGTH = Math.ceil(((this.MAX_NEIGHBORHOOD_SIZE ** 2) - 1) / 32);
 
   // Simulation loop state vars
+  private isInit = new ReplaySubject<boolean>(1);
+  public isInit$: Observable<boolean> = this.isInit.asObservable();
   private animationId: number | null = null;
   private isRunning: boolean = false;
-  private targetStepsPerSecond = 24; // Target FPS
-  private lastFrameTime = 0;
-  private stepAccumulator = 0;
+  private isLoading = new BehaviorSubject<boolean>(true);
+  public isLoading$: Observable<boolean> = this.isLoading.asObservable();
+  private targetStepTime = 1000 / 24; // Target FPS
+  private lastComputeTime = 0;
+  private lastInputTime = 0;
+  private inputStepAccumulator = 0;
+
+  // Input buffers
+  public directionsPressed = [false, false, false, false]; // Up, Right, Down, Left
+  private pendingColors: Array<Float32Array<ArrayBuffer> | null> = [null, null]; // Buffer color inputs
+  private pendingRuleMasks: Array<Uint32Array<ArrayBuffer> | null> = [null, null];
+  private pendingKernels: Array<ArrayBuffer | null> = [null, null];
 
   // Camera vars
   private cameraBuffer!: GPUBuffer;
@@ -97,12 +110,14 @@ export class WebGPUService {
     this.createBuffers();
 
     // Compute pipline init
-    await this.randomizeGrid('fractal');
+    await this.randomizeGrid();
     this.createComputePipeline();
     this.createComputeBindGroups();
     // Render pipeline init
     this.createRenderPipeline();
     this.createRenderBindGroup();
+
+    this.isInit.next(true);
   }
 
   // Call when freeing this service
@@ -147,10 +162,10 @@ export class WebGPUService {
     this.renderParamsBindGroup = undefined as any;
   }
 
-  start() {
+  start(startPaused: boolean) {
     if (this.isRunning) return;
-    this.lastFrameTime = performance.now();
-    this.isRunning = true;
+    this.resetFrameData();
+    this.isRunning = !startPaused;
 
     requestAnimationFrame(this.frame);
   }
@@ -173,6 +188,68 @@ export class WebGPUService {
       this.computeStep();
       this.renderFrame();
     }
+  }
+
+  updateTargetFPS(value: number){
+    this.targetStepTime = 1000 / value;
+    this.resetFrameData();
+  }
+
+  updateColors(r: number, g: number, b: number, index: number) {
+    // Convert from 256 base values to 0->1.0 floats
+    const colorData = new Float32Array([
+      Math.max(0.0, Math.min(r / 255.0, 1.0)),
+      Math.max(0.0, Math.min(g / 255.0, 1.0)),
+      Math.max(0.0, Math.min(b / 255.0, 1.0)),
+      1.0
+    ]);
+
+    this.pendingColors[index] = colorData;
+  }
+
+  updateRuleMasks(ruleArrayMask: boolean[], rule: number){
+    const ruleMask = new Uint32Array(this.BITMASK_LENGTH);
+    for (let i = 0; i < ruleArrayMask.length; i++) {
+      if(ruleArrayMask[i]) this.setBit(ruleMask, i);
+    }
+    this.pendingRuleMasks[rule] = ruleMask;
+  }
+
+  updateKernels(newKernel: Array<Array<number>>, rule: number) {
+    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
+    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
+    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
+    let weightCount = 0;
+    let weightSum = 0;
+
+    for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
+        const weight = newKernel[y][x];
+        if (weight > 0) {
+          weightCount++;
+          weightSum += weight;
+          kernel[this.index(x, y, this.MAX_NEIGHBORHOOD_SIZE)] = weight;
+        }
+      }
+    }
+
+    const scale = weightCount/weightSum;
+    new Uint32Array(buffer, 0, kernelArea).set(kernel);
+    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+
+    this.pendingKernels[rule] = buffer;
+  }
+
+  private setBit(mask: Uint32Array, n: number) {
+    const word = Math.floor(n / 32);
+    const bit = n % 32;
+    mask[word] |= 1 << bit;
+  }
+
+  resetFrameData() {
+    this.lastComputeTime = performance.now();
+    this.lastInputTime = performance.now();
+    this.inputStepAccumulator = 0;
   }
 
   // Pan camera
@@ -229,8 +306,13 @@ export class WebGPUService {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  public updateNoiseGenerator(generator: string){
+    this.noiseGenerator = generator;
+  }
+
   // Randomize gridstate of simulation
-  async randomizeGrid(method: string) {
+  async randomizeGrid() {
+    this.isLoading.next(true);
     // Pause simulation loop
     const wasRunning = this.isRunning;
     this.isRunning = false;
@@ -241,10 +323,10 @@ export class WebGPUService {
     // Randomize array
     const newCells = new Uint32Array(this.gridSize.x * this.gridSize.y);
 
-    if (method === 'fractal') {
-      this.fractalNosie(newCells);
+    if (this.noiseGenerator === 'fractal') {
+      this.fractalNoise(newCells);
     }
-    else if (method === 'simplex') {
+    else if (this.noiseGenerator === 'simplex') {
       this.simplexNoise(newCells);
     }
     else {
@@ -258,30 +340,31 @@ export class WebGPUService {
     this.pingpongIndex = 0;  // Reset ping-pong index
 
     this.isRunning = wasRunning;
+    this.isLoading.next(false);
   }
 
   ///
   /// Private Service methods
   ///
   private frame = (time: number) => {
-    const delta = (time - this.lastFrameTime) / 1000;
-    this.lastFrameTime = time;
+    this.updateState(time);
 
-    if (this.isRunning) {
-      const stepInterval = 1 / this.targetStepsPerSecond;
-      this.stepAccumulator += delta;
-
-      while (this.stepAccumulator >= stepInterval) {
-        this.computeStep();
-        this.stepAccumulator -= stepInterval;
-      }
-    }
+    this.handleInput(time);
 
     this.renderFrame();
 
     // Loop
     requestAnimationFrame(this.frame);
   };
+
+  private updateState(time: number) {
+    if (this.isRunning) {
+      if (time - this.lastComputeTime >= this.targetStepTime){
+        this.computeStep();
+        this.lastComputeTime = time;
+      }
+    }
+  }
 
   private computeStep() {
     const encoder = this.device.createCommandEncoder();
@@ -305,38 +388,97 @@ export class WebGPUService {
     this.pingpongIndex ^= 1;
   }
 
-  private index(x: number, y: number, width: number ): number {
-    return (y * width) + x;
+  // Handle user input
+  private handleInput(time: number) {
+    const delta = time - this.lastInputTime;
+    const stepInterval = 1000 / 30;
+    this.inputStepAccumulator += delta;
+
+    while (this.inputStepAccumulator >= stepInterval) {
+      this.handleDirectionInput();
+      this.handleColorInput();
+      this.handleMaskInput();
+      this.handleKernelInput();
+
+      this.inputStepAccumulator -= stepInterval;
+    }
+
+    this.lastInputTime = time;
   }
 
-  private updateNeighborhoodBuffer(index: number, rule: number) {
-    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
-    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
-    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
-    let weightCount = 0;
-    let weightSum = 0;
+  private handleKernelInput() {
+    for (let i = 0; i < 2; i++) {
+      const kernel = this.pendingKernels[i];
+      if(kernel != null) {
+        if (i === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, kernel);
+        else this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, kernel);
 
-    const center: orderedPair = { 
-      x: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2),
-      y: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2) 
+        this.pendingKernels[i] = null;
+      }
+    }
+  }
+
+  private handleMaskInput() {
+    for (let i = 0; i < 2; i++) {
+      const ruleMask = this.pendingRuleMasks[i];
+      if(ruleMask != null) {
+        this.device.queue.writeBuffer(
+          this.rulesBuffer,
+          i * this.BITMASK_LENGTH * 4,
+          ruleMask
+        );
+
+        this.pendingRuleMasks[i] = undefined as any;
+      }
+    }
+  }
+
+  // Handle camera movment based on diretion input
+  private handleDirectionInput() {
+    const speed = 15;
+  
+    let dx = 0;
+    let dy = 0;
+
+    // directionsPressed: [up, right, down, left]
+    if (this.directionsPressed[0]) dy -= 1;
+    if (this.directionsPressed[1]) dx -= 1;
+    if (this.directionsPressed[2]) dy += 1;
+    if (this.directionsPressed[3]) dx += 1;
+
+    if(dx === 0 && dy === 0) {
+      return;
     }
 
-    kernel[this.index(center.x - 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-    kernel[this.index(center.x - 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;     kernel[this.index(center.x, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 0;     kernel[this.index(center.x + 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-    kernel[this.index(center.x - 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
-
-    for(const weight of kernel){
-      if (weight > 0) weightCount++;
-      weightSum += weight;
+    const length = Math.hypot(dx, dy);
+    if (length > 0) {
+      dx /= length;
+      dy /= length;
     }
 
-    const scale = weightCount/weightSum;
+    dx *= speed;
+    dy *= speed;
 
-    new Uint32Array(buffer, 0, kernelArea).set(kernel);
-    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+    this.cameraMove(Math.floor(dx), Math.floor(dy));
+  }
 
-    if(rule === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, buffer);
-    else if (rule === 1) this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, buffer);
+  private handleColorInput() {
+    for (let i = 0; i < this.pendingColors.length; i++) {
+      const color = this.pendingColors[i];
+      if(color != null) {
+        this.device.queue.writeBuffer(
+          this.colorBuffer,
+          i * 16, // 4 values * 4 bytes
+          color
+        );
+
+        this.pendingColors[i] = null;
+      }
+    }
+  }
+
+  private index(x: number, y: number, width: number ): number {
+    return (y * width) + x;
   }
 
   private updateCameraBuffer() {
@@ -354,23 +496,6 @@ export class WebGPUService {
     );
   }
 
-  public updateColors(r: number, g: number, b: number, index: number) {
-    // Convert from 256 base values to 0->1.0 floats
-    const colorData = new Float32Array([
-      Math.max(0.0, Math.min(r / 255.0, 1.0)),
-      Math.max(0.0, Math.min(g / 255.0, 1.0)),
-      Math.max(0.0, Math.min(b / 255.0, 1.0)),
-      1.0
-    ]);
-    console.log(r, g, b);
-
-    this.device.queue.writeBuffer(
-      this.colorBuffer,
-      (index + 1) * 16, // 4 values * 4 bytes
-      colorData
-    );
-  }
-
   private whiteNoise (cells: Uint32Array) {
     for (let i = 0; i < cells.length; i++) {
       const temp = Math.floor(Math.random() * 10);
@@ -379,39 +504,65 @@ export class WebGPUService {
   }
 
   private simplexNoise (cells: Uint32Array) {
-    const noise = createNoise2D();
-    const scale = 0.05;
+    const noise = createNoise4D();
 
     for (let y = 0; y < this.gridSize.y; y++) {
       for (let x = 0; x < this.gridSize.x; x++) {
         const i = y * this.gridSize.x + x;
 
-        const n = noise(x * scale, y * scale);
+        const scale = 4;
+        const nx = x / this.gridSize.x
+        const ny = y / this.gridSize.y;
+
+        // Map to torus
+        const angleX = nx * Math.PI * 2;
+        const angleY = ny * Math.PI * 2;
+
+        const nx_cos = Math.cos(angleX) * scale;
+        const nx_sin = Math.sin(angleX) * scale;
+        const ny_cos = Math.cos(angleY) * scale;
+        const ny_sin = Math.sin(angleY) * scale;
+
+        const n = noise(nx_cos, nx_sin, ny_cos, ny_sin);
+
         cells[i] = Math.floor((n + 1) * 0.5 * (this.MAX_RULESETS + 1));
       }
     }
   }
   
-  private fractalNosie (cells: Uint32Array) {
-    const noise = createNoise2D();
+  private fractalNoise (cells: Uint32Array) {
+    const noise = createNoise4D();
 
     for (let y = 0; y < this.gridSize.y; y++) {
       for (let x = 0; x < this.gridSize.x; x++) {
-        const i = y * this.gridSize.x + x;
-
         let value = 0;
+        const i = y * this.gridSize.x + x;
         let amp = 1;
-        let freq = 0.02;
         const rounds = 4;
+        let scale = 3;
 
-        for (let i = 0; i < rounds; i++) {
-          value += noise(x * freq, y * freq) * amp;
+        for (let o = 0; o < rounds; o++) {
+          const nx = x / this.gridSize.x;
+          const ny = y / this.gridSize.y;
+          
+          // Map to torus
+          const angleX = nx * Math.PI * 2;
+          const angleY = ny * Math.PI * 2;
+
+          value += noise(
+            Math.cos(angleX) * scale + 10,
+            Math.sin(angleX) * scale + 20,
+            Math.cos(angleY) * scale + 30,
+            Math.sin(angleY) * scale + 40
+          ) * amp;
+
           amp *= 0.5;
-          freq *= 2;
+          scale  *= 2;
         }
-        value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize
 
-        const n = Math.floor((value + 1) * 0.5 * (this.MAX_RULESETS + 1));
+        value /= 2 - (1.0 / Math.pow(2, rounds - 1)); // normalize 
+
+        const n = Math.floor((value + 1) * 0.5 * (this.MAX_RULESETS + 1)); 
         cells[i] = n;
       }
     }
@@ -468,7 +619,7 @@ export class WebGPUService {
     return y * grid.width + x;
   }
 
-  fn getCell(x: i32, y: i32) -> u32 {
+  fn checkCell(x: i32, y: i32) -> bool {
     let w = i32(grid.width);
     let h = i32(grid.height);
 
@@ -478,17 +629,16 @@ export class WebGPUService {
 
     let cellValue = inputCells[index(u32(wrappedX), u32(wrappedY))];
 
-    if(cellValue == rules.value){
-      return cellValue;
-    }
-    else {
-      return 0u;
-    }
+    return (cellValue == rules.value);
   }
 
   fn checkBitmask(mask: array<u32,${this.BITMASK_LENGTH}>, value: u32) -> bool {
-    let word = value >> 5u;       // divide by 32
-    let bit  = value & 31u;       // mod 32
+    if(value == 0u) {
+      return false;
+    }
+    let index = value - 1u;
+    let word = index >> 5u;       // divide by 32
+    let bit  = index & 31u;       // mod 32
     return (mask[word] & (1u << bit)) != 0u;
   }
 
@@ -504,14 +654,16 @@ export class WebGPUService {
         if (weight != 0u) {
           let nx = x + i32(ox) - offset;
           let ny = y + i32(oy) - offset;
-          neighborCount += getCell(nx,ny) * weight;
+
+          if (checkCell(nx,ny)) {
+            neighborCount += weight;
+          }
         }
       }
     }
 
     return u32(f32(neighborCount) * neighborhood.scale);
   }
-
 
   // Compute shader
 
@@ -676,22 +828,13 @@ export class WebGPUService {
     // Calculate camera zoom + pan
     let worldX = ((in.uv.x * f32width) / camera.zoom) + camera.offsetX;
     let worldY = ((in.uv.y * f32height) / camera.zoom) + camera.offsetY;
-
-    var x = 0u;    
-    if( worldX < 0) {
-      x = grid.width - u32(abs(worldX) % f32width);
-    }
-    else {
-      x = u32(worldX) % grid.width;
-    }
     
-    var y = 0u;
-    if( worldY < 0) {
-      y = grid.height - u32(abs(worldY) % f32height);
-    }
-    else {
-      y = u32(worldY) % grid.height;
-    }
+    // Calculate toroidal wrap
+    let wrappedX = worldX - floor(worldX / f32width) * f32width;
+    let wrappedY = worldY - floor(worldY / f32height) * f32height;
+
+    let x = u32(wrappedX);
+    let y = u32(wrappedY);
 
     let index = y * grid.width + x;
     let value = state[index];
@@ -805,10 +948,10 @@ export class WebGPUService {
     });
     const rules = new Uint32Array((this.BITMASK_LENGTH * 2) + 1);
     // Birth: 3 neighbors
-    rules[0] |= (1 << 3);
+    rules[0] |= (1 << 2);
     // Survive: 2 or 3 neighbors
+    rules[this.BITMASK_LENGTH] |= (1 << 1);
     rules[this.BITMASK_LENGTH] |= (1 << 2);
-    rules[this.BITMASK_LENGTH] |= (1 << 3);
     rules[this.BITMASK_LENGTH * 2] = 1;
     this.device.queue.writeBuffer(
       this.rulesBuffer,
@@ -820,13 +963,13 @@ export class WebGPUService {
       size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.updateNeighborhoodBuffer(0, 0);
+    this.initNeighborhoodBuffer(0);
 
     this.sNeighborhoodBuffer = this.device.createBuffer({
       size: ((this.MAX_NEIGHBORHOOD_SIZE ** 2) + 1) * 4, // Kernel + 1 float * 4 bytes
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.updateNeighborhoodBuffer(0, 1);
+    this.initNeighborhoodBuffer(1);
   }
 
   private createCameraBuffer() {
@@ -842,8 +985,38 @@ export class WebGPUService {
       size: (this.MAX_RULESETS + 1) * 16, // 4 * 4 byte floats r,g,b,a
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    this.updateColors(0, 0, 0, -1);
-    this.updateColors(128, 255, 255, 0);
+    this.updateColors(0, 0, 0, 0);
+    this.updateColors(128, 255, 255, 1);
+  }
+
+  private initNeighborhoodBuffer(rule: number) {
+    const kernelArea = this.MAX_NEIGHBORHOOD_SIZE ** 2;
+    const buffer = new ArrayBuffer((kernelArea + 1) * 4);
+    const kernel = new Uint32Array(this.MAX_NEIGHBORHOOD_SIZE ** 2);
+    let weightCount = 0;
+    let weightSum = 0;
+
+    const center: orderedPair = { 
+      x: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2),
+      y: Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2) 
+    }
+
+    kernel[this.index(center.x - 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y + 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;     kernel[this.index(center.x, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 0;     kernel[this.index(center.x + 1, center.y, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+    kernel[this.index(center.x - 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1; kernel[this.index(center.x + 1, center.y - 1, this.MAX_NEIGHBORHOOD_SIZE)] = 1;
+
+    for(const weight of kernel){
+      if (weight > 0) weightCount++;
+      weightSum += weight;
+    }
+
+    const scale = weightCount/weightSum;
+
+    new Uint32Array(buffer, 0, kernelArea).set(kernel);
+    new Float32Array(buffer, kernelArea * 4, 1)[0] = scale;
+
+    if(rule === 0) this.device.queue.writeBuffer(this.bNeighborhoodBuffer, 0, buffer);
+    else if (rule === 1) this.device.queue.writeBuffer(this.sNeighborhoodBuffer, 0, buffer);
   }
 
 }

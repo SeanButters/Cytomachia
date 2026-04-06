@@ -1,0 +1,226 @@
+@if (isSimulation) {
+<div class="page">
+  <div class="configContainer">
+    <span class="containerTitle">
+      Change Colors
+    </span>
+    <div class="containerContents">
+      <div
+        style="display: flex; justify-content: center; gap: 10px;">
+        <button
+          matButton
+          matTooltip="Randomize all colors"
+          (click)="randomizeAllColors()">
+          <mat-icon fontIcon="casino"></mat-icon>
+          <span style="display: grid;">Randomize all colors</span>
+        </button>
+      </div>
+      <div class="configOption">
+        <span class="optionTitle">Cell Color</span>
+        <div class="colorPicker" id="foregroundColorPicker" #foregroundColorPicker></div>
+        <div class="hexInput">
+          <span>Hex Color: </span>
+          <input type="text" [formControl]="foregroundColorControl" (blur)="foregroundColorBlur()">
+          <button 
+            matButton
+            matTooltip="Randomize cell color"
+            (click)="randomizeForegroundColor()">
+            <mat-icon fontIcon="casino"></mat-icon>
+          </button>
+        </div>
+      </div>
+      <div class="configOption">
+        <span class="optionTitle">Background Color</span>
+        <div class="colorPicker" id="backgroundColorPicker" #backgroundColorPicker></div>
+        <div class="hexInput">
+          <span>Hex Color: </span>
+          <input type="text" [formControl]="backgroundColorControl" (blur)="backgroundColorBlur()">
+          <button 
+            matButton
+            matTooltip="Randomize background color"
+            (click)="randomizeBackgroundColor()">
+            <mat-icon fontIcon="casino"></mat-icon>
+          </button>
+        </div>
+      </div>      
+    </div>
+  </div>
+  <div class="configContainer">
+    <span class="containerTitle">Simulation Configurations</span>
+    <div class="containerContents">
+      <div class="configOption">
+        <span class="optionTitle">Maximum Frame Rate</span>
+        <span>
+          <mat-slider
+            min="8"
+            max="244"
+            step="8">
+            <input matSliderThumb [formControl]="fpsControl" (dragEnd)="updateTargetFPS(fpsControl.value!)">
+          </mat-slider>
+          <span style="display: inline-block; width: 25px;">{{ fpsControl.value }}</span>
+        </span>
+      </div>
+      <div class="configOption">
+        <span class="optionTitle">Noise Generator</span>
+        <mat-radio-group 
+        (change)="updateNoiseGenerator($event.value)"
+        [formControl]="noiseGeneratorControl">
+          <mat-radio-button value="white noise">White noise</mat-radio-button>
+          <mat-radio-button value="simplex">Simplex</mat-radio-button>
+          <mat-radio-button value="fractal">Fractal</mat-radio-button>
+        </mat-radio-group>
+      </div>
+    </div>
+  </div>
+  <div class="configContainer" style="width: 539px;">
+    <span class="containerTitle">Ruleset Configurations</span>
+    <div class="containerContents">
+      <div class="configOption">
+        <span class="optionTitle">Birth Range(s)</span>
+        <input type="text" [formControl]="birthMaskControl" (blur)="birthMaskToString()">
+        <div class="maskContainer">
+        @for(value of birthMask; track $index) {
+          <div class="bitContainer">
+            <span>{{ $index + 1 }}</span>
+            <div 
+              class="kernelCell"
+              [class.active]="value"
+              (click)="toggleBirthMask($index)"
+              [title]="$index + 1"
+            ></div>
+          </div>
+        }
+        </div>
+      </div>
+      <div class="configOption">
+        <span class="optionTitle">Survive Range(s)</span>
+        <input type="text" [formControl]="surviveMaskControl" (blur)="surviveMaskToString()">
+        <div class="maskContainer">
+        @for(value of surviveMask; track $index;) {
+          <div class="bitContainer">
+            <span>{{ $index  + 1 }}</span>
+            <div 
+              class="kernelCell"
+              [class.active]="value"
+              (click)="toggleSurviveMask($index)"
+              [title]="$index + 1"
+            ></div>
+          </div>
+        }
+        </div>
+      </div>
+      <div class="configOption">
+        <span class="optionTitle">Neighborhood Setup</span>
+        @if(isCombinedKernelControl.value) {
+          <div class="kernel">
+          @if(isDetailedKernelViewControl.value) {
+            @for (row of birthKernel; track y; let y = $index) {
+              <div  class="maskContainer">
+              @for (cell of row; track x; let x = $index;) {
+                <div 
+                  class="kernelCell detailCell"
+                  [style.background-color]="getKernelCellColor(x, y, 0)"
+                  (click)="toggleEditKernelCell(x, y, 0)"
+                  [class.inactive]="y === 7 && x ===7">
+                @if(x === isEditingX && y === isEditingY) {
+                  <input 
+                    #kernelInput
+                    type="text"
+                    [formControl]="kernelValueControl"
+                    style="max-width: 9px; max-height: 12px;"
+                    (blur)="submitKernelControl(x, y, 0)" 
+                    (keydown.enter)="submitKernelControl(x, y, 0)">
+                } @else {
+                  {{ getKernelCellValue(x, y, 0) }}
+                }
+                </div>
+              }
+              </div>
+            }
+          }
+          @else {
+            @for (row of birthKernel; track y; let y = $index) {
+              <div  class="maskContainer">
+              @for (cell of row; track x; let x = $index) {
+                <div 
+                  class="kernelCell"
+                  [class.inactive]="y === 7 && x ===7"
+                  [class.active]="birthKernel[y][x] > 0"
+                  (click)="toggleKernelCell(x, y, 0)"
+                ></div>
+              }
+              </div>
+            }
+          }
+          </div>
+        }
+        @else {
+          <div style="display: flex; flex-direction: row; gap: 20px">
+            <div class="kernel">
+              <span class="optionTitle">Birth Rule Neighborhood</span>
+              @if (isDetailedKernelViewControl.value) {
+
+              }
+              @else {
+                @for (row of birthKernel; track y; let y = $index) {
+                  <div  class="maskContainer">
+                  @for (cell of row; track x; let x = $index) {
+                    <div 
+                      class="kernelCell"
+                      [class.inactive]="y === 7 && x ===7"
+                      [class.active]="birthKernel[y][x] > 0"
+                      (click)="toggleKernelCell(x, y, 0)"
+                    ></div>
+                  }
+                  </div>
+                }          
+              }
+            </div>
+            <div class="kernel">
+              <span class="optionTitle">Survive Rule Neighborhood</span>
+              @if (isDetailedKernelViewControl.value) {
+
+              }
+              @else {
+                @for (row of surviveKernel; track y; let y = $index) {
+                  <div  class="maskContainer">
+                  @for (cell of row; track x; let x = $index) {
+                    <div 
+                      class="kernelCell"
+                      [class.inactive]="y === 7 && x ===7"
+                      [class.active]="surviveKernel[y][x] > 0"
+                      (click)="toggleKernelCell(x, y, 1)"
+                    ></div>
+                  }
+                  </div>
+                }
+              } 
+            </div>
+          </div>         
+        }
+        <span matTooltip="Toggles whether birth and survive rules use the same neighborhood">
+          <input type="checkbox" [formControl]="isCombinedKernelControl" (change)="updateCombinedKernel()">
+          Use combined neighborhood
+        </span>
+        <span matTooltip="Toggles wether the kernel editor alows custom weights">
+          <input type="checkbox" [formControl]="isDetailedKernelViewControl" (change)="updateDetailedKernelView()">
+          Allow custom kernel weights (Advanced)
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="configContainer">
+    <span class="containerTitle">Preset Configurations</span>
+    <div class="containerContents">
+      <div class="configOption">
+        <button 
+          matButton
+          matTooltip="Randomize cell color"
+          (click)="initConway()">
+          Conway's Game of Life
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+}

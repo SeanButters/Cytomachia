@@ -1,0 +1,71 @@
+<div class="theatre" [class.compact]="isCompact">
+  <div class="player" [class.loading]="isLoading">
+    <canvas #canvas class="camera"></canvas>
+    <div class="playerButtons">
+      <!-- <div class="buttonRow">
+        <button
+          matButton
+          matTooltip="Draw mode (NOT CURRENTLY IMPLEMENTED)"
+          [disabled]="interactionMode==='draw' || isLoading"
+          (click)="updateInteractionMode('draw')"
+          >
+          <span class="material-symbols-outlined">edit</span>
+        </button>
+        <button
+          matButton
+          matTooltip="Drag mode"
+          [disabled]="interactionMode==='drag' || isLoading"
+          (click)="updateInteractionMode('drag')"
+          >
+          <span class="material-symbols-outlined">drag_pan</span>
+        </button>
+      </div> -->
+      <div class="buttonRow">
+        <button 
+          matButton
+          [matTooltip]="isPaused? 'Start/Resume simulation' : 'Pause simulation'"
+          [disabled]="isLoading"
+          (click)="pauseLoop()">
+          <mat-icon [fontIcon]="isPaused ? 'play_arrow' : 'pause'"></mat-icon>
+        </button>
+        <button 
+          matButton
+          matTooltip="Step once"
+          [disabled]="isLoading"
+          (click)="stepOnce()">
+          <mat-icon fontIcon="skip_next"></mat-icon>
+        </button>
+        <button 
+          matButton
+          matTooltip="Reseed simulation with noise generator"
+          [disabled]="isLoading"
+          (click)="randomizeGrid()">
+          <span class="material-symbols-outlined">recycling</span>
+        </button>
+      </div>
+      <div class="buttonRow">
+        <button 
+          matButton
+          matTooltip="Zoom out"
+          [disabled]="isLoading"
+          (click)="zoomInOut(false)">
+          <mat-icon fontIcon="zoom_out"></mat-icon>
+        </button> 
+        <button 
+          matButton
+          matTooltip="Zoom in"
+          [disabled]="isLoading"
+          (click)="zoomInOut(true)">
+          <mat-icon fontIcon="zoom_in"></mat-icon>
+        </button>
+        <button 
+          matButton
+          [matTooltip]="isCompact? 'Expand View' : 'Compact View'"
+          [disabled]="isLoading"
+          (click)="toggleCompactMode()">
+          <mat-icon [fontIcon]="isCompact ? 'fullscreen' : 'fullscreen_exit'"></mat-icon>
+        </button>       
+      </div>
+    </div>
+  </div>
+</div>
