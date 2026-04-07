@@ -88,7 +88,9 @@ export class SimulationService {
       return;
     }
 
-    this.adapter = await navigator.gpu.requestAdapter();
+    this.adapter = await navigator.gpu.requestAdapter({
+      powerPreference: "high-performance"
+    });
     if (!this.adapter) {
       console.error('No GPU adapter found');
       //TODO: Make error snackbar
