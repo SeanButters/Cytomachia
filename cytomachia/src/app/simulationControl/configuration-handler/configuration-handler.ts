@@ -12,7 +12,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatRadioModule} from '@angular/material/radio';
 import { MatSliderModule } from '@angular/material/slider'
 import { SimulationService } from '../simulation-service';
-import { debounceTime, distinctUntilChanged, filter, take } from 'rxjs/operators';
+import { PresetConfigService, CAConfiguration } from '../preset-config-service';
+import { debounceTime, distinctUntilChanged, filter, take, timeout } from 'rxjs/operators';
 import iro from '@jaames/iro';
 import { IroColorPicker } from '@jaames/iro/dist/ColorPicker';
 import { IroColor } from '@irojs/iro-core/dist/color'
@@ -35,6 +36,7 @@ import { MatTooltip } from "@angular/material/tooltip";
 export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   constructor(
     private simulation: SimulationService,
+    private presets: PresetConfigService,
     private changeDetector: ChangeDetectorRef,
   ) {}
 
@@ -87,6 +89,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   public surviveKernel: Array<Array<number>> = [];
   public isEditingX: number = -1;
   public isEditingY: number = -1;
+  public isEditingKernelRule: number = -1;
   public kernelValueControl = new FormControl('',
     Validators.pattern(/^[0-9]$/)
   )
@@ -111,11 +114,13 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   ngOnDestroy() {
     this.backgroundColorPicker!.off('input:end', this.updateBackgroundColor);
     this.foregroundColorPicker!.off('input:end', this.updateForegroundColor);
+    window.removeEventListener('keydown', this.handleKeyDown);
     this.masterSubscription.unsubscribe();
   }
 
   private init() {
-    this.initConway();
+    window.addEventListener('keydown', this.handleKeyDown);
+    this.presetConway();
 
     // Setup color pickers
     this.backgroundColorPickerElement = this.backgroundColorPickerRef.nativeElement;
@@ -385,7 +390,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     }
   }
 
-  public submitKernelControl(x: number, y: number, rule: 0) {
+  public submitKernelControl(x: number, y: number, rule: number, removeIsEditing: boolean = true) {
     const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
     if(x === center && y === center) return;
 
@@ -405,9 +410,12 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
       }
     }
 
-    this.kernelValueControl.setValue('');
-    this.isEditingX = -1;
-    this.isEditingY = -1;
+    if(removeIsEditing) {
+      this.kernelValueControl.setValue('');
+      this.isEditingX = -1;
+      this.isEditingY = -1;    
+      this.isEditingKernelRule = -1;
+    }
   }
 
   public toggleKernelCell(x: number, y: number, rule: number) {
@@ -426,19 +434,49 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     if(this.isCombinedKernelControl.value) this.simulation.updateKernels(this.surviveKernel, 1);
   }
 
-  public toggleEditKernelCell(x: number, y: number, rule: 0) {
+  public toggleEditKernelCell(x: number, y: number, rule: number) {
     const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
     if(x === center && y === center) return;
+    if( x > this.MAX_NEIGHBORHOOD_SIZE - 1 || y > this.MAX_NEIGHBORHOOD_SIZE - 1 || x < 0 || y < 0) return;
 
+    this.isEditingKernelRule = rule;
     this.isEditingX = x;
     this.isEditingY = y;
     this.kernelValueControl.setValue(this.getKernelCellValue(x, y, rule));
     this.changeDetector.detectChanges();
 
-    this.kernelInputElement!.nativeElement.focus();
+    setTimeout(() => {
+      this.kernelInputElement!.nativeElement.focus();
+      this.kernelInputElement!.nativeElement.select();
+    }, 50);
   }
 
-  public getKernelCellColor(x: number, y: number, rule: 0): string {
+  private handleKeyDown = (e: KeyboardEvent) => {
+    if(this.isEditingX > -1) {
+      if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        this.submitKernelControl(this.isEditingX, this.isEditingY, this.isEditingKernelRule, false);
+        this.toggleEditKernelCell(this.isEditingX, this.isEditingY - 1, this.isEditingKernelRule);
+      }
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        this.submitKernelControl(this.isEditingX, this.isEditingY, this.isEditingKernelRule, false);
+        this.toggleEditKernelCell(this.isEditingX + 1, this.isEditingY, this.isEditingKernelRule);
+      }
+      if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        this.submitKernelControl(this.isEditingX, this.isEditingY, this.isEditingKernelRule, false);
+        this.toggleEditKernelCell(this.isEditingX, this.isEditingY + 1, this.isEditingKernelRule);
+      }
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        this.submitKernelControl(this.isEditingX, this.isEditingY, this.isEditingKernelRule, false);
+        this.toggleEditKernelCell(this.isEditingX - 1, this.isEditingY, this.isEditingKernelRule);
+      }
+    }
+  }
+
+  public getKernelCellColor(x: number, y: number, rule: number): string {
     const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
     if(x === center && y === center) return 'rgb(82, 82, 82)';
 
@@ -451,7 +489,7 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     return 'hsl('+hue+', 70%, 50%)';
   }
 
-  public getKernelCellValue(x: number, y: number, rule: 0): string {
+  public getKernelCellValue(x: number, y: number, rule: number): string {
     const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2);
     if(x === center && y === center) return '';
 
@@ -462,8 +500,10 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   public updateCombinedKernel() {
     if(!this.isCombinedKernelControl.value) {
       this.surviveKernel = this.copyKernel(this.birthKernel);
+      this.kernelToMaskUpdate(1);
     } else {
       this.surviveKernel = this.birthKernel;
+      this.kernelToMaskUpdate(1);
     }
   }
 
@@ -488,27 +528,88 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.simulation.updateTargetFPS(value);
   }
 
+  private kernelToMaskUpdate(rule: number){
+    const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+    let kernelCount = 0;
 
-  ///
-  /// Preset helper methods
-  ///
-  private getEmptyKernel(): Array<Array<number>> {
-    const kernel: Array<Array<number>> = [];
-
-    for (let y = 0; y < this.MAX_NEIGHBORHOOD_SIZE; y++) {
-      const row: number[] = [];
-      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++) {
-        row.push(0);
+    for (let y = 0; y <this.MAX_NEIGHBORHOOD_SIZE; y++){
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++){
+        if(kernel[y][x] > 0) kernelCount++;
       }
-      kernel.push(row);
     }
-    return kernel;
+
+    if(rule === 0) {
+      if(this.birthWeightCount < kernelCount) {
+        for(let i = this.birthWeightCount; i < kernelCount; i++) {
+          this.birthMask.push(false);
+        }
+        this.birthWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.birthMask, 0);
+      }
+      else {
+        for(let i = kernelCount; i < this.birthWeightCount; i++) {
+          this.birthMask.pop();
+        }
+        this.birthWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.birthMask, 0);        
+      }
+
+      if(this.isCombinedKernelControl.value) {
+        if(this.surviveWeightCount < kernelCount) {
+          for(let i = this.surviveWeightCount; i < kernelCount; i++) {
+            this.surviveMask.push(false);
+          }
+          this.surviveWeightCount = kernelCount;
+          this.simulation.updateRuleMasks(this.surviveMask, 1);
+        }
+        else {
+          for(let i = kernelCount; i < this.surviveWeightCount; i++) {
+            this.surviveMask.pop();
+          }
+          this.surviveWeightCount = kernelCount;
+          this.simulation.updateRuleMasks(this.surviveMask, 1);        
+        }
+      }
+    }
+    else {
+      if(this.surviveWeightCount < kernelCount) {
+        for(let i = this.surviveWeightCount; i < kernelCount; i++) {
+          this.surviveMask.push(false);
+        }
+        this.surviveWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.surviveMask, 1);
+      }
+      else {
+        for(let i = kernelCount; i < this.surviveWeightCount; i++) {
+          this.surviveMask.pop();
+        }
+        this.surviveWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.surviveMask, 1);        
+      }
+    }
   }
 
-  private copyKernel(oKernel: Array<Array<number>>): Array<Array<number>> {
-    // Copy values not addresses
-    const newKernel: Array<Array<number>> = oKernel.map(row => [...row]);
-    return newKernel;
+  public swapKernels() {
+    const temp = this.copyKernel(this.birthKernel);
+    this.birthKernel = this.surviveKernel;
+    this.surviveKernel = temp;
+    this.kernelToMaskUpdate(0);
+    this.kernelToMaskUpdate(1);
+    this.simulation.updateKernels(this.birthKernel, 0);
+    this.simulation.updateKernels(this.surviveKernel, 1);
+  }
+
+  public copyToKernel(rule: number) {
+    if (rule === 0) {
+      this.birthKernel = this.copyKernel(this.surviveKernel);
+      this.kernelToMaskUpdate(0);
+      this.simulation.updateKernels(this.birthKernel, 0);
+    }
+    else {
+      this.surviveKernel = this.copyKernel(this.birthKernel);
+      this.kernelToMaskUpdate(1);
+      this.simulation.updateKernels(this.surviveKernel, 1);
+    }
   }
 
 
@@ -516,26 +617,26 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   /// Init presets
   ///
 
-  private initPreset(
-    birthMaskString: string,
-    surviveMaskString: string,
-    birthKernel: Array<Array<number>>,
-    surviveKernel: Array<Array<number>> | null,
-    isDetailedKernelView: boolean
-  ) {
-    // Init kernels
-    this.isDetailedKernelViewControl.setValue(isDetailedKernelView);
+  private copyKernel(oKernel: Array<Array<number>>): Array<Array<number>> {
+    // Copy values not addresses
+    const newKernel: Array<Array<number>> = oKernel.map(row => [...row]);
+    return newKernel;
+  }
 
-    this.birthKernel  = birthKernel;
-    if (surviveKernel != null) {
-      this.surviveKernel = surviveKernel;
+  private initPreset( preset: CAConfiguration) {
+    // Init kernels
+    this.isDetailedKernelViewControl.setValue(preset.hasKernelWeights);
+
+    this.birthKernel  = preset.birthKernel;
+    if (preset.surviveKernel != null) {
+      this.surviveKernel = preset.surviveKernel;
       this.isCombinedKernelControl.setValue(false);
     }
     else {
       this.surviveKernel = this.birthKernel;
       this.isCombinedKernelControl.setValue(true);
     }
-    this.updateCombinedKernel();
+    //this.updateCombinedKernel();
 
     this.simulation.updateKernels(this.birthKernel, 0);
     this.simulation.updateKernels(this.surviveKernel, 1);
@@ -552,38 +653,46 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
 
     // Init masks
     this.birthMask = new Array(this.birthWeightCount).fill(false);
-    this.birthMaskControl.setValue(birthMaskString);
-    this.stringToMask(birthMaskString, this.birthMask);
+    this.birthMaskControl.setValue(preset.birthMaskString);
+    this.stringToMask(preset.birthMaskString, this.birthMask);
     this.simulation.updateRuleMasks(this.birthMask, 0);
   
     this.surviveMask = new Array(this.surviveWeightCount).fill(false);
-    this.surviveMaskControl.setValue(surviveMaskString);
-    this.stringToMask(surviveMaskString, this.surviveMask);
+    this.surviveMaskControl.setValue(preset.surviveMaskString);
+    this.stringToMask(preset.surviveMaskString, this.surviveMask);
     this.simulation.updateRuleMasks(this.surviveMask, 1);
 
 
     this.changeDetector.detectChanges();
   }
 
-  public initConway() {
-    const kernel = this.getEmptyKernel();
-    // Set Ruleset strings
-    const birthMaskString = '3';
-    const surviveMaskString = '2-3';
+  public presetConway() {
+    const preset: CAConfiguration = this.presets.getConway();
+    this.initPreset(preset);
+  }
 
-    // Set kernels
-    const center = Math.floor(this.MAX_NEIGHBORHOOD_SIZE / 2); 
+  public presetMaze() {
+    const preset: CAConfiguration = this.presets.getMaze();
+    this.initPreset(preset);
+  }
 
-    kernel[center + 1][center - 1] = 1; kernel[center + 1][center] = 1; kernel[center + 1][center + 1] = 1;
-    kernel[center][center - 1] = 1;     kernel[center][center] = 0;     kernel[center][center + 1] = 1;
-    kernel[center - 1][center - 1] = 1; kernel[center - 1][center] = 1; kernel[center - 1][center + 1] = 1;
+  public presetGaussian() {
+    const preset: CAConfiguration = this.presets.getGaussian();
+    this.initPreset(preset);
+  }
 
-    this.initPreset(
-      birthMaskString,
-      surviveMaskString,
-      kernel, 
-      null,
-      false
-    );
+  public presetBugs() {
+    const preset: CAConfiguration = this.presets.getBugs();
+    this.initPreset(preset);
+  }
+
+  public presetMitosis() {
+    const preset: CAConfiguration = this.presets.getMitosis();
+    this.initPreset(preset);
+  }
+
+  public presetAmoeba() {
+    const preset: CAConfiguration = this.presets.getAmoeba();
+    this.initPreset(preset);
   }
 }

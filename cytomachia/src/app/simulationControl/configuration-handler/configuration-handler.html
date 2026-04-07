@@ -72,7 +72,7 @@
       </div>
     </div>
   </div>
-  <div class="configContainer" style="width: 539px;">
+  <div class="configContainer" style="width: 580px;">
     <span class="containerTitle">Ruleset Configurations</span>
     <div class="containerContents">
       <div class="configOption">
@@ -93,7 +93,7 @@
         </div>
       </div>
       <div class="configOption">
-        <span class="optionTitle">Survive Range(s)</span>
+        <span class="optionTitle">Survival Range(s)</span>
         <input type="text" [formControl]="surviveMaskControl" (blur)="surviveMaskToString()">
         <div class="maskContainer">
         @for(value of surviveMask; track $index;) {
@@ -155,11 +155,33 @@
           </div>
         }
         @else {
-          <div style="display: flex; flex-direction: row; gap: 20px">
+          <div style="display: flex; flex-direction: row; gap: 8px">
             <div class="kernel">
               <span class="optionTitle">Birth Rule Neighborhood</span>
               @if (isDetailedKernelViewControl.value) {
-
+                @for (row of birthKernel; track y; let y = $index) {
+                  <div  class="maskContainer">
+                  @for (cell of row; track x; let x = $index;) {
+                    <div 
+                      class="kernelCell detailCell"
+                      [style.background-color]="getKernelCellColor(x, y, 0)"
+                      (click)="toggleEditKernelCell(x, y, 0)"
+                      [class.inactive]="y === 7 && x ===7">
+                    @if(x === isEditingX && y === isEditingY) {
+                      <input 
+                        #kernelInput
+                        type="text"
+                        [formControl]="kernelValueControl"
+                        style="max-width: 9px; max-height: 12px;"
+                        (blur)="submitKernelControl(x, y, 0)" 
+                        (keydown.enter)="submitKernelControl(x, y, 0)">
+                    } @else {
+                      {{ getKernelCellValue(x, y, 0) }}
+                    }
+                    </div>
+                  }
+                  </div>
+                }
               }
               @else {
                 @for (row of birthKernel; track y; let y = $index) {
@@ -176,10 +198,52 @@
                 }          
               }
             </div>
+            <div class="seperateKernelControlButtons">
+              <button 
+                matButton
+                matTooltip="Copy to the right"
+                (click)="copyToKernel(1)">
+                <mat-icon fontIcon="arrow_right_alt"></mat-icon>
+              </button>
+              <button 
+                matButton
+                matTooltip="Swap neighborhood kernels"
+                (click)="swapKernels()">
+                <mat-icon fontIcon="swap_horiz"></mat-icon>
+              </button>
+              <button 
+                matButton
+                matTooltip="Copy to the left"
+                (click)="copyToKernel(0)">
+                <mat-icon fontIcon="arrow_right_alt" style="transform: rotate(180deg);"></mat-icon>
+              </button>                                          
+            </div>
             <div class="kernel">
-              <span class="optionTitle">Survive Rule Neighborhood</span>
+              <span class="optionTitle">Survival Rule Neighborhood</span>
               @if (isDetailedKernelViewControl.value) {
-
+                @for (row of surviveKernel; track y; let y = $index) {
+                  <div  class="maskContainer">
+                  @for (cell of row; track x; let x = $index;) {
+                    <div 
+                      class="kernelCell detailCell"
+                      [style.background-color]="getKernelCellColor(x, y, 1)"
+                      (click)="toggleEditKernelCell(x, y, 1)"
+                      [class.inactive]="y === 7 && x ===7">
+                    @if(x === isEditingX && y === isEditingY) {
+                      <input 
+                        #kernelInput
+                        type="text"
+                        [formControl]="kernelValueControl"
+                        style="max-width: 9px; max-height: 12px;"
+                        (blur)="submitKernelControl(x, y, 1)" 
+                        (keydown.enter)="submitKernelControl(x, y, 1)">
+                    } @else {
+                      {{ getKernelCellValue(x, y, 1) }}
+                    }
+                    </div>
+                  }
+                  </div>
+                }
               }
               @else {
                 @for (row of surviveKernel; track y; let y = $index) {
@@ -210,14 +274,44 @@
     </div>
   </div>
   <div class="configContainer">
-    <span class="containerTitle">Preset Configurations</span>
+    <span class="containerTitle">Import Presets</span>
     <div class="containerContents">
-      <div class="configOption">
+      <div class="configOption" style="gap: 20px; padding-top: 15px;">
         <button 
           matButton
-          matTooltip="Randomize cell color"
-          (click)="initConway()">
-          Conway's Game of Life
+          matTooltip="Import preset for Conway's Game of life"
+          (click)="presetConway()">
+          Conway's Game of Life (3x3)
+        </button>
+        <button 
+          matButton
+          matTooltip="Import preset 'Maze'"
+          (click)="presetMaze()">
+          Maze (3x3)
+        </button>
+        <button 
+          matButton
+          matTooltip="Import preset 'Gaussian Blobs'"
+          (click)="presetGaussian()">
+          Guassian Blobs (9x9)
+        </button>        
+        <button 
+          matButton
+          matTooltip="Import preset for 'Bugs'"
+          (click)="presetBugs()">
+          Bugs (11x11)
+        </button>
+        <button 
+          matButton
+          matTooltip="Import preset for 'Mitosis'"
+          (click)="presetMitosis()">
+          Mitosis (5x5, 14x14)
+        </button>
+        <button 
+          matButton
+          matTooltip="Import preset for 'Amoeba'"
+          (click)="presetAmoeba()">
+          Amoeba (15x15)
         </button>
       </div>
     </div>
