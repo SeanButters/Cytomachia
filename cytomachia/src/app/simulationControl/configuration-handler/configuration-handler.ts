@@ -500,8 +500,10 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   public updateCombinedKernel() {
     if(!this.isCombinedKernelControl.value) {
       this.surviveKernel = this.copyKernel(this.birthKernel);
+      this.kernelToMaskUpdate(1);
     } else {
       this.surviveKernel = this.birthKernel;
+      this.kernelToMaskUpdate(1);
     }
   }
 
@@ -526,10 +528,73 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
     this.simulation.updateTargetFPS(value);
   }
 
+  private kernelToMaskUpdate(rule: number){
+    const kernel = rule === 0 ? this.birthKernel : this.surviveKernel;
+    let kernelCount = 0;
+
+    for (let y = 0; y <this.MAX_NEIGHBORHOOD_SIZE; y++){
+      for (let x = 0; x < this.MAX_NEIGHBORHOOD_SIZE; x++){
+        if(kernel[y][x] > 0) kernelCount++;
+      }
+    }
+
+    if(rule === 0) {
+      if(this.birthWeightCount < kernelCount) {
+        for(let i = this.birthWeightCount; i < kernelCount; i++) {
+          this.birthMask.push(false);
+        }
+        this.birthWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.birthMask, 0);
+      }
+      else {
+        for(let i = kernelCount; i < this.birthWeightCount; i++) {
+          this.birthMask.pop();
+        }
+        this.birthWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.birthMask, 0);        
+      }
+
+      if(this.isCombinedKernelControl.value) {
+        if(this.surviveWeightCount < kernelCount) {
+          for(let i = this.surviveWeightCount; i < kernelCount; i++) {
+            this.surviveMask.push(false);
+          }
+          this.surviveWeightCount = kernelCount;
+          this.simulation.updateRuleMasks(this.surviveMask, 1);
+        }
+        else {
+          for(let i = kernelCount; i < this.surviveWeightCount; i++) {
+            this.surviveMask.pop();
+          }
+          this.surviveWeightCount = kernelCount;
+          this.simulation.updateRuleMasks(this.surviveMask, 1);        
+        }
+      }
+    }
+    else {
+      if(this.surviveWeightCount < kernelCount) {
+        for(let i = this.surviveWeightCount; i < kernelCount; i++) {
+          this.surviveMask.push(false);
+        }
+        this.surviveWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.surviveMask, 1);
+      }
+      else {
+        for(let i = kernelCount; i < this.surviveWeightCount; i++) {
+          this.surviveMask.pop();
+        }
+        this.surviveWeightCount = kernelCount;
+        this.simulation.updateRuleMasks(this.surviveMask, 1);        
+      }
+    }
+  }
+
   public swapKernels() {
     const temp = this.copyKernel(this.birthKernel);
     this.birthKernel = this.surviveKernel;
     this.surviveKernel = temp;
+    this.kernelToMaskUpdate(0);
+    this.kernelToMaskUpdate(1);
     this.simulation.updateKernels(this.birthKernel, 0);
     this.simulation.updateKernels(this.surviveKernel, 1);
   }
@@ -537,10 +602,12 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
   public copyToKernel(rule: number) {
     if (rule === 0) {
       this.birthKernel = this.copyKernel(this.surviveKernel);
+      this.kernelToMaskUpdate(0);
       this.simulation.updateKernels(this.birthKernel, 0);
     }
     else {
       this.surviveKernel = this.copyKernel(this.birthKernel);
+      this.kernelToMaskUpdate(1);
       this.simulation.updateKernels(this.surviveKernel, 1);
     }
   }
@@ -621,6 +688,11 @@ export class ConfigurationHandler implements OnDestroy, AfterViewInit {
 
   public presetMitosis() {
     const preset: CAConfiguration = this.presets.getMitosis();
+    this.initPreset(preset);
+  }
+
+  public presetAmoeba() {
+    const preset: CAConfiguration = this.presets.getAmoeba();
     this.initPreset(preset);
   }
 }
