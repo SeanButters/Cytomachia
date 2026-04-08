@@ -9,7 +9,7 @@ Dr. Badri Velabmi
 ##### [Team Contract](Team_Info/TeamContractSigned.pdf)
 
 #### Project Abstract
-Internactive web application exploring multi-neighborhood and multi-rule cellular automata to simulate competition between species
+Internactive 2D cellular automata simulator that runs on a browser
 
 ### 2. Project Description
 ##### [Project Description](Assignments/Project-Description.md)
