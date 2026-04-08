@@ -175,7 +175,7 @@ export class PresetConfigService {
       [1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1],
       [0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0],
       [0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0],
-      [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0],
+      [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
       [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
       [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0], 
     ];
@@ -185,7 +185,7 @@ export class PresetConfigService {
       surviveMaskString: surviveMaskString,
       birthKernel: birthKernel,
       surviveKernel: null,
-      hasKernelWeights: true
+      hasKernelWeights: false
     }
   }
 
