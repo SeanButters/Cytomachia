@@ -6,7 +6,6 @@
 
 #### Project Advisor
 Dr. Badri Vellabmi
-##### [Team Contract](Team_Info/TeamContractSigned.pdf)
 
 ### 1. Project Description
 Cytomachia is a 2D cellular automata sandbox engine that runs on a browser. It supports configurable rule sets,  neighborhood kernels, and noise generation among other options. Changes to configurations are accurately updated in the simulation in real-time, which is powered by GPU-accelerated computation.
@@ -28,17 +27,7 @@ Cytomachia is a 2D cellular automata sandbox engine that runs on a browser. It s
 ### 6. Poster
 #### [Expo Poster](/senior_design/buttersn_EXPO.pdf)
 
-### 7. Self-Assesments
-#### [Fall Self Assesment](/senior_design/FallSelfAssesment.pdf)
-#### [Spring Self Assesment](/senior_design/SpringSelfAssesment.pdf)
-
-### 8. Summary of Hours
-#### [Hours summary](/senior_design/Hours.md)
-
-### 9. Summary of Expenses
-#### [Current budget and expenses](/team_info/Budget.md)
-
-### 10. Appendix
+### 7. Appendix
 #### [Source Code](/cytomachia/)
 #### References and Citations
 - [Understanding Multiple Neighborhood Cellular Automata](https://slackermanz.com/understanding-multiple-neighborhood-cellular-automata/)
